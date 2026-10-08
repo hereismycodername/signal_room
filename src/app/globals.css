@@ -199,6 +199,7 @@ button { cursor: pointer; }
 .question-list-item:hover { background: white; }
 .question-list-item.active { background: var(--mint); transform: translateX(5px); }
 .status-dot { width: 7px; height: 7px; margin-top: 3px; border-radius: 50%; background: #aeb4af; }
+.status-dot.draft { background: #aeb4af; }
 .status-dot.open { background: #65a36d; box-shadow: 0 0 0 4px rgba(101,163,109,.12); }
 .status-dot.sealed { background: #d69b2e; }
 .status-dot.resolved { background: var(--forest); }

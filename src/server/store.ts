@@ -3,7 +3,15 @@ import "server-only";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { authNonces, forecasts, sessions, users } from "@/db/schema";
+import {
+  authNonces,
+  forecasts,
+  questions,
+  rooms,
+  sessions,
+  users,
+} from "@/db/schema";
+import type { QuestionStatus } from "@/lib/forecasting";
 
 export type AuthNonceRecord = {
   id: string;
@@ -33,11 +41,38 @@ export type StoredForecast = {
   submittedAt: Date;
 };
 
+export type StoredRoom = {
+  id: string;
+  name: string;
+  description: string;
+  ownerUserId: string;
+  createdAt: Date;
+};
+
+export type StoredQuestion = {
+  id: string;
+  roomId: string;
+  prompt: string;
+  category: string;
+  resolutionCriteria: string;
+  closesAt: Date;
+  status: QuestionStatus;
+  outcome: number | null;
+  evidenceLabel: string | null;
+  evidenceUrl: string | null;
+  openedAt: Date | null;
+  sealedAt: Date | null;
+  resolvedAt: Date | null;
+  createdAt: Date;
+};
+
 type MemoryState = {
   nonces: Map<string, AuthNonceRecord>;
   users: Map<string, { id: string; walletAddress: string }>;
   sessions: Map<string, SessionRecord>;
   forecasts: Map<string, StoredForecast>;
+  rooms: Map<string, StoredRoom>;
+  questions: Map<string, StoredQuestion>;
 };
 
 declare global {
@@ -52,7 +87,13 @@ const memory =
     users: new Map(),
     sessions: new Map(),
     forecasts: new Map(),
+    rooms: new Map(),
+    questions: new Map(),
   });
+
+// Hot reload can preserve a store created by an older module version.
+memory.rooms ??= new Map();
+memory.questions ??= new Map();
 
 function getDb() {
   if (!process.env.DATABASE_URL) return null;
@@ -232,4 +273,121 @@ export async function getForecast(
     )
     .limit(1);
   return record ?? null;
+}
+
+export async function listForecastsForQuestion(questionId: string) {
+  const db = getDb();
+  if (!db) {
+    return Array.from(memory.forecasts.values()).filter(
+      (forecast) => forecast.questionId === questionId,
+    );
+  }
+  return db.select().from(forecasts).where(eq(forecasts.questionId, questionId));
+}
+
+export async function createRoom(record: StoredRoom) {
+  const db = getDb();
+  if (!db) {
+    memory.rooms.set(record.id, record);
+    return record;
+  }
+  const [created] = await db.insert(rooms).values(record).returning();
+  return created as StoredRoom;
+}
+
+export async function getRoom(id: string) {
+  const db = getDb();
+  if (!db) return memory.rooms.get(id) ?? null;
+  const [room] = await db.select().from(rooms).where(eq(rooms.id, id)).limit(1);
+  return room ?? null;
+}
+
+export async function listRoomsByOwner(ownerUserId: string) {
+  const db = getDb();
+  if (!db) {
+    return Array.from(memory.rooms.values())
+      .filter((room) => room.ownerUserId === ownerUserId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+  }
+  return db.select().from(rooms).where(eq(rooms.ownerUserId, ownerUserId));
+}
+
+export async function createQuestion(record: StoredQuestion) {
+  const db = getDb();
+  if (!db) {
+    memory.questions.set(record.id, record);
+    return record;
+  }
+  const [created] = await db.insert(questions).values(record).returning();
+  return { ...created, status: created.status as QuestionStatus };
+}
+
+export async function getQuestion(id: string) {
+  const db = getDb();
+  if (!db) return memory.questions.get(id) ?? null;
+  const [question] = await db
+    .select()
+    .from(questions)
+    .where(eq(questions.id, id))
+    .limit(1);
+  return question
+    ? { ...question, status: question.status as QuestionStatus }
+    : null;
+}
+
+export async function getRoomQuestion(roomId: string, questionId: string) {
+  const question = await getQuestion(questionId);
+  return question?.roomId === roomId ? question : null;
+}
+
+export async function listQuestionsByRoom(roomId: string) {
+  const db = getDb();
+  if (!db) {
+    return Array.from(memory.questions.values())
+      .filter((question) => question.roomId === roomId)
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  }
+  const records = await db
+    .select()
+    .from(questions)
+    .where(eq(questions.roomId, roomId));
+  return records.map((question) => ({
+    ...question,
+    status: question.status as QuestionStatus,
+  }));
+}
+
+export async function transitionQuestion(
+  id: string,
+  expectedStatus: QuestionStatus,
+  values: Partial<
+    Pick<
+      StoredQuestion,
+      | "status"
+      | "outcome"
+      | "evidenceLabel"
+      | "evidenceUrl"
+      | "openedAt"
+      | "sealedAt"
+      | "resolvedAt"
+    >
+  >,
+) {
+  const db = getDb();
+  if (!db) {
+    const question = memory.questions.get(id);
+    if (!question || question.status !== expectedStatus) return null;
+    const updated = { ...question, ...values };
+    memory.questions.set(id, updated);
+    return updated;
+  }
+
+  const [updated] = await db
+    .update(questions)
+    .set(values)
+    .where(and(eq(questions.id, id), eq(questions.status, expectedStatus)))
+    .returning();
+  return updated
+    ? { ...updated, status: updated.status as QuestionStatus }
+    : null;
 }

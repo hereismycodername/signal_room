@@ -8,6 +8,13 @@
       "when": 1791473340771,
       "tag": "0000_black_grey_gargoyle",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791473768086,
+      "tag": "0001_nebulous_sleeper",
+      "breakpoints": true
     }
   ]
 }

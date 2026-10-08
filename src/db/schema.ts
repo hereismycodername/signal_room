@@ -31,6 +31,35 @@ export const sessions = pgTable("sessions", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const rooms = pgTable("rooms", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const questions = pgTable("questions", {
+  id: text("id").primaryKey(),
+  roomId: text("room_id")
+    .notNull()
+    .references(() => rooms.id, { onDelete: "cascade" }),
+  prompt: text("prompt").notNull(),
+  category: text("category").notNull(),
+  resolutionCriteria: text("resolution_criteria").notNull(),
+  closesAt: timestamp("closes_at", { withTimezone: true }).notNull(),
+  status: text("status").notNull().default("draft"),
+  outcome: integer("outcome"),
+  evidenceLabel: text("evidence_label"),
+  evidenceUrl: text("evidence_url"),
+  openedAt: timestamp("opened_at", { withTimezone: true }),
+  sealedAt: timestamp("sealed_at", { withTimezone: true }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const forecasts = pgTable(
   "forecasts",
   {

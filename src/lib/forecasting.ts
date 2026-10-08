@@ -1,4 +1,4 @@
-export type QuestionStatus = "open" | "sealed" | "resolved";
+export type QuestionStatus = "draft" | "open" | "sealed" | "resolved";
 export type BinaryOutcome = 0 | 1;
 
 export type Forecast = {
@@ -144,6 +144,7 @@ export function canTransition(
   next: QuestionStatus,
 ) {
   return (
+    (current === "draft" && next === "open") ||
     (current === "open" && next === "sealed") ||
     (current === "sealed" && next === "resolved")
   );

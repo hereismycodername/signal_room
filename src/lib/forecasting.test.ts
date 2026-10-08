@@ -25,7 +25,8 @@ describe("brierScorePoints", () => {
 });
 
 describe("question lifecycle", () => {
-  it("only permits open → sealed → resolved", () => {
+  it("only permits draft → open → sealed → resolved", () => {
+    expect(canTransition("draft", "open")).toBe(true);
     expect(canTransition("open", "sealed")).toBe(true);
     expect(canTransition("sealed", "resolved")).toBe(true);
     expect(canTransition("open", "resolved")).toBe(false);

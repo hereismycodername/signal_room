@@ -15,6 +15,7 @@ import {
 } from "@/lib/forecasting";
 
 const statusCopy = {
+  draft: "Draft",
   open: "Open",
   sealed: "Sealed",
   resolved: "Resolved",
@@ -220,6 +221,7 @@ export default function Home() {
         <nav aria-label="Primary navigation">
           <a href="#room">Room</a>
           <a href="#leaderboard">Leaderboard</a>
+          <a href="/studio">Studio</a>
           <a href="#how-it-works">How it works</a>
         </nav>
         <WalletButton />

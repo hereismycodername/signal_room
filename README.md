@@ -10,7 +10,7 @@ Signal Room helps a group answer a more useful question than “what does the ma
 
 ## Status
 
-Signal Room is an active hackathon MVP. The forecasting vertical slice, Solana Wallet Standard sign-in, server-side signature verification, and signed forecast receipts are implemented.
+Signal Room is an active hackathon MVP. The forecasting vertical slice, Solana Wallet Standard sign-in, signed forecast receipts, and wallet-permissioned Organizer Studio are implemented.
 
 - [Product and implementation plan](docs/SIGNAL_ROOM_PLAN.md)
 - Live demo: coming soon
@@ -97,6 +97,7 @@ The browser never receives another participant's forecast before sealing. The se
 ├── drizzle/                  # PostgreSQL migration
 ├── public/                   # static assets
 ├── src/app/                  # Next.js UI and route handlers
+│   └── studio/               # organizer room and question lifecycle
 ├── src/db/                   # Drizzle schema
 ├── src/server/               # auth, signatures, sessions, persistence
 ├── .github/workflows/        # continuous integration
@@ -138,8 +139,9 @@ Wallet sign-in and forecast submission only request readable message signatures.
 - [x] Forecasting-room vertical slice
 - [x] Wallet authentication and signed commitments
 - [x] PostgreSQL schema, migration, and optional local fallback
-- [ ] Organizer studio and role enforcement
-- [ ] Persistent room lifecycle and aggregate reveal API
+- [x] Organizer studio and role enforcement
+- [x] Persistent room lifecycle and privacy-preserving aggregate API
+- [ ] Public pages for newly created rooms
 - [ ] Anchor program and local validator tests
 - [ ] Solana devnet anchoring and explorer links
 - [ ] Public user test and demo data

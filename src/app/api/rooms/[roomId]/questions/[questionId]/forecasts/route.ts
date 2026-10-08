@@ -3,7 +3,12 @@ import { DEMO_ROOM } from "@/lib/demo-room";
 import { buildForecastMessage } from "@/lib/messages";
 import { sha256Hex, verifyWalletSignature } from "@/server/crypto";
 import { readSession } from "@/server/session";
-import { createForecast, getForecast, storageMode } from "@/server/store";
+import {
+  createForecast,
+  getForecast,
+  getRoomQuestion,
+  storageMode,
+} from "@/server/store";
 
 const requestSchema = z.object({
   probabilityBps: z.number().int().min(0).max(10_000),
@@ -15,7 +20,7 @@ type RouteContext = {
   params: Promise<{ roomId: string; questionId: string }>;
 };
 
-function findQuestion(roomId: string, questionId: string) {
+function findDemoQuestion(roomId: string, questionId: string) {
   if (roomId !== DEMO_ROOM.id) return null;
   return DEMO_ROOM.questions.find((question) => question.id === questionId) ?? null;
 }
@@ -42,10 +47,14 @@ export async function POST(request: Request, context: RouteContext) {
   if (!session) return Response.json({ error: "Wallet sign-in required." }, { status: 401 });
 
   const { roomId, questionId } = await context.params;
-  const question = findQuestion(roomId, questionId);
+  const storedQuestion = await getRoomQuestion(roomId, questionId);
+  const question = storedQuestion ?? findDemoQuestion(roomId, questionId);
   if (!question) return Response.json({ error: "Question not found." }, { status: 404 });
   if (question.status !== "open") {
     return Response.json({ error: "This question is no longer open." }, { status: 409 });
+  }
+  if (storedQuestion && storedQuestion.closesAt <= new Date()) {
+    return Response.json({ error: "The forecast deadline has passed." }, { status: 409 });
   }
 
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
