@@ -1,392 +1,399 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useMemo, useState } from "react";
+import { CURRENT_PARTICIPANT, DEMO_ROOM } from "@/lib/demo-room";
+import {
+  aggregateProbability,
+  brierScorePoints,
+  buildHistogram,
+  buildLeaderboard,
+  canTransition,
+  type BinaryOutcome,
+  type Question,
+} from "@/lib/forecasting";
 
-type CharacterId = "alina" | "mira" | "max";
+const statusCopy = {
+  open: "Open",
+  sealed: "Sealed",
+  resolved: "Resolved",
+} as const;
 
-type Character = {
-  id: CharacterId;
-  name: string;
-  age: number;
-  role: string;
-  tagline: string;
-  initials: string;
-  color: string;
-};
+function SignalMark() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 40 40" className="signal-mark">
+      <path d="M7 26.5 13.5 20l5 5L31 12.5" />
+      <path d="M7 13.5h6.5V20H20" />
+      <circle cx="31" cy="12.5" r="3" />
+    </svg>
+  );
+}
 
-type Choice = {
-  id: string;
-  text: string;
-  tone: string;
-  votes: number;
-  affection: number;
-  response: string;
-};
+function formatScore(score: number) {
+  return (score / 100).toFixed(1);
+}
 
-type Scene = {
-  chapter: string;
-  place: string;
-  time: string;
-  characterId: CharacterId;
-  narration: string;
-  line: string;
-  choices: Choice[];
-};
-
-type RoundResult = {
-  winner: Choice;
-  wasTie: boolean;
-  tiedCount: number;
-};
-
-const CHARACTERS: Character[] = [
-  {
-    id: "alina",
-    name: "Алина Соколова",
-    age: 27,
-    role: "Продуктовый дизайнер",
-    tagline: "Сохраняет мемы по папкам и считает это системой.",
-    initials: "АС",
-    color: "#ff6f61",
-  },
-  {
-    id: "mira",
-    name: "Мира Ким",
-    age: 26,
-    role: "Фотограф",
-    tagline: "Сначала фотографирует еду. Потом разрешает её есть.",
-    initials: "МК",
-    color: "#6c8cff",
-  },
-  {
-    id: "max",
-    name: "Макс Орлов",
-    age: 29,
-    role: "Мобильный разработчик",
-    tagline: "Открыто 48 вкладок. В жизни примерно так же.",
-    initials: "МО",
-    color: "#22b894",
-  },
-];
-
-const SCENES: Scene[] = [
-  {
-    chapter: "СВИДАНИЕ 01",
-    place: "Кофейня у метро",
-    time: "19:08",
-    characterId: "alina",
-    narration: "Алина опоздала на семь минут и принесла вам печенье в качестве официальной компенсации.",
-    line: "У тебя есть привычка, которая раздражает вообще всех?",
-    choices: [
-      {
-        id: "alarm",
-        text: "Я ставлю пять будильников и торгуюсь с каждым.",
-        tone: "честно",
-        votes: 14,
-        affection: 10,
-        response: "Алина смеётся: у неё семь будильников. Вы неожиданно нашли совместимость в хроническом недосыпе.",
-      },
-      {
-        id: "memes",
-        text: "Отвечаю на серьёзные сообщения мемами.",
-        tone: "рискованно",
-        votes: 14,
-        affection: 14,
-        response: "Она достаёт телефон и показывает папку «Мемы для серьёзных разговоров». Кажется, это судьба.",
-      },
-      {
-        id: "ghost",
-        text: "Говорю «давай созвонимся» и исчезаю на неделю.",
-        tone: "слишком честно",
-        votes: 7,
-        affection: -12,
-        response: "Алина молча добавляет вас в календарь. Событие называется «не созваниваться».",
-      },
-    ],
-  },
-  {
-    chapter: "СВИДАНИЕ 02",
-    place: "Небольшой книжный магазин",
-    time: "16:42",
-    characterId: "mira",
-    narration: "Мира уже успела сфотографировать витрину, кассира и вашу попытку выглядеть естественно.",
-    line: "Выбери мне книгу, не спрашивая, что я люблю читать.",
-    choices: [
-      {
-        id: "favorite",
-        text: "Беру свою любимую и пишу внутри короткую записку.",
-        tone: "тепло",
-        votes: 17,
-        affection: 13,
-        response: "Мира читает записку дважды и прячет книгу в сумку. Фото этой сцены почему-то не требуется.",
-      },
-      {
-        id: "cover",
-        text: "Выбираю самую красивую обложку. Метод научный.",
-        tone: "легкомысленно",
-        votes: 11,
-        affection: 6,
-        response: "Книга оказывается справочником по ремонту тракторов. Мира говорит, что давно хотела новое хобби.",
-      },
-      {
-        id: "psychology",
-        text: "Дарю «Как разбираться в людях за пять минут».",
-        tone: "опасно",
-        votes: 6,
-        affection: -11,
-        response: "Мира смотрит на вас ровно пять минут. Затем ставит книгу обратно на полку.",
-      },
-    ],
-  },
-  {
-    chapter: "СВИДАНИЕ 03",
-    place: "Супермаркет возле дома",
-    time: "20:16",
-    characterId: "max",
-    narration: "Ресторан отменил бронь. Макс объявил продуктовый магазин «неожиданным кулинарным квестом».",
-    line: "У нас один пакет, ограниченный бюджет и ужин через час. План?",
-    choices: [
-      {
-        id: "pasta",
-        text: "Готовим пасту вместе. Я отвечаю за музыку.",
-        tone: "уютно",
-        votes: 16,
-        affection: 13,
-        response: "Макс добавляет в корзину пасту и нелепо дорогой сыр. Плейлист уже называется «второе свидание».",
-      },
-      {
-        id: "breakfast",
-        text: "Покупаем хлопья. Ужин — это социальный конструкт.",
-        tone: "практично",
-        votes: 9,
-        affection: 7,
-        response: "Макс серьёзно сравнивает состав двух коробок. Вы проходите проверку на бытовую совместимость.",
-      },
-      {
-        id: "delivery",
-        text: "Заказываем доставку прямо из супермаркета.",
-        tone: "хаос",
-        votes: 16,
-        affection: -8,
-        response: "Курьер звонит, пока вы стоите у кассы. Макс уважает абсурд, но не бизнес-модель.",
-      },
-    ],
-  },
-];
-
-const START_CHEMISTRY: Record<CharacterId, number> = { alina: 32, mira: 29, max: 31 };
-const clamp = (value: number) => Math.min(100, Math.max(0, value));
-
-function randomInt(max: number) {
-  const value = new Uint32Array(1);
-  window.crypto.getRandomValues(value);
-  return value[0] % max;
+function QuestionListItem({
+  question,
+  active,
+  onSelect,
+}: {
+  question: Question;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`question-list-item ${active ? "active" : ""}`}
+      onClick={onSelect}
+      aria-pressed={active}
+    >
+      <span className={`status-dot ${question.status}`} />
+      <span className="question-list-copy">
+        <strong>{question.prompt}</strong>
+        <small>
+          {statusCopy[question.status]} · {question.forecasts.length} forecasts
+        </small>
+      </span>
+      <span aria-hidden="true" className="list-arrow">
+        ↗
+      </span>
+    </button>
+  );
 }
 
 export default function Home() {
-  const [sceneIndex, setSceneIndex] = useState(0);
-  const [choices, setChoices] = useState(SCENES[0].choices);
-  const [chemistry, setChemistry] = useState(START_CHEMISTRY);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [seconds, setSeconds] = useState(25);
-  const [result, setResult] = useState<RoundResult | null>(null);
-  const [episodeComplete, setEpisodeComplete] = useState(false);
-  const [storyLog, setStoryLog] = useState([
-    "Зрители получили контроль над вашей личной жизнью.",
-    "Первое свидание началось. Пути назад почти нет.",
-  ]);
-
-  const scene = SCENES[sceneIndex];
-  const character = CHARACTERS.find((item) => item.id === scene.characterId)!;
-  const totalVotes = choices.reduce((sum, choice) => sum + choice.votes, 0);
-  const currentChemistry = chemistry[character.id];
-  const favorite = useMemo(
-    () => [...CHARACTERS].sort((a, b) => chemistry[b.id] - chemistry[a.id])[0],
-    [chemistry],
+  const [questions, setQuestions] = useState(DEMO_ROOM.questions);
+  const [selectedQuestionId, setSelectedQuestionId] = useState(
+    DEMO_ROOM.questions[0].id,
   );
+  const [probability, setProbability] = useState(68);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  const resolveRound = useCallback(() => {
-    if (result) return;
-    const maxVotes = Math.max(...choices.map((choice) => choice.votes));
-    const tied = choices.filter((choice) => choice.votes === maxVotes);
-    const winner = tied[randomInt(tied.length)];
-    const wasTie = tied.length > 1;
+  const question = questions.find((item) => item.id === selectedQuestionId)!;
+  const ownForecast = question.forecasts.find(
+    (forecast) => forecast.participantId === CURRENT_PARTICIPANT.id,
+  );
+  const aggregate = aggregateProbability(question.forecasts);
+  const histogram = buildHistogram(question.forecasts);
+  const maxBucket = Math.max(...histogram, 1);
+  const leaderboard = useMemo(() => buildLeaderboard(questions), [questions]);
+  const resolvedCount = questions.filter(
+    (item) => item.status === "resolved",
+  ).length;
+  const openCount = questions.filter((item) => item.status === "open").length;
 
-    setChemistry((values) => ({
-      ...values,
-      [scene.characterId]: clamp(values[scene.characterId] + winner.affection),
-    }));
-    setStoryLog((entries) => [
-      wasTie
-        ? `Ничья ×${tied.length}. Случайно выбрано: «${winner.text}»`
-        : `Большинство выбрало: «${winner.text}»`,
-      ...entries,
-    ]);
-    setResult({ winner, wasTie, tiedCount: tied.length });
-  }, [choices, result, scene.characterId]);
-
-  useEffect(() => {
-    if (result || episodeComplete) return;
-    const timer = window.setTimeout(() => {
-      if (seconds <= 1) resolveRound();
-      else setSeconds((value) => value - 1);
-    }, 1000);
-    return () => window.clearTimeout(timer);
-  }, [seconds, result, episodeComplete, resolveRound]);
-
-  function castVote(id: string) {
-    if (selected || result) return;
-    setSelected(id);
-    setChoices((items) => items.map((choice) => choice.id === id ? { ...choice, votes: choice.votes + 1 } : choice));
+  function selectQuestion(id: string) {
+    setSelectedQuestionId(id);
+    setProbability(68);
+    setNotice(null);
   }
 
-  function nextScene() {
-    if (!result) return;
-    if (sceneIndex === SCENES.length - 1) {
-      setEpisodeComplete(true);
-      return;
-    }
-    const nextIndex = sceneIndex + 1;
-    setSceneIndex(nextIndex);
-    setChoices(SCENES[nextIndex].choices);
-    setSelected(null);
-    setResult(null);
-    setSeconds(25);
+  function submitForecast() {
+    if (question.status !== "open" || ownForecast) return;
+
+    setQuestions((items) =>
+      items.map((item) =>
+        item.id === question.id
+          ? {
+              ...item,
+              forecasts: [
+                ...item.forecasts,
+                {
+                  id: `${item.id}-${CURRENT_PARTICIPANT.id}`,
+                  participantId: CURRENT_PARTICIPANT.id,
+                  participantName: CURRENT_PARTICIPANT.name,
+                  probability,
+                  submittedAt: new Date().toISOString(),
+                },
+              ],
+            }
+          : item,
+      ),
+    );
+    setNotice(
+      `Forecast locked at ${probability}%. The room consensus stays hidden until sealing.`,
+    );
   }
 
-  function restartEpisode() {
-    setSceneIndex(0);
-    setChoices(SCENES[0].choices);
-    setChemistry(START_CHEMISTRY);
-    setSelected(null);
-    setResult(null);
-    setSeconds(25);
-    setEpisodeComplete(false);
-    setStoryLog(["Новый эпизод. Зрители обещали давать зрелые советы.", "Никто им не поверил."]);
+  function sealQuestion() {
+    if (!canTransition(question.status, "sealed")) return;
+    setQuestions((items) =>
+      items.map((item) =>
+        item.id === question.id ? { ...item, status: "sealed" as const } : item,
+      ),
+    );
+    setNotice("Question sealed. Forecasts are now visible and cannot be changed.");
   }
 
-  const characterStyle = { "--character-color": character.color } as CSSProperties;
+  function resolveQuestion(outcome: BinaryOutcome) {
+    if (!canTransition(question.status, "resolved")) return;
+    setQuestions((items) =>
+      items.map((item) =>
+        item.id === question.id
+          ? {
+              ...item,
+              status: "resolved" as const,
+              outcome,
+              sourceLabel: "Local demo resolution",
+            }
+          : item,
+      ),
+    );
+    setNotice(
+      `Resolved ${outcome === 1 ? "YES" : "NO"}. Scores and leaderboard were recalculated.`,
+    );
+  }
 
   return (
-    <main className="novel-shell">
-      <header className="novel-topbar">
-        <div className="logo-lockup">
-          <span className="heart-logo">♥</span>
-          <div><p>PROJECT: UNTITLED</p><small>КОЛЛЕКТИВНАЯ ИСТОРИЯ ЗНАКОМСТВ</small></div>
-        </div>
-        <div className="live-badge"><i /> LIVE · {totalVotes} ЗРИТЕЛЕЙ</div>
+    <main className="app-shell">
+      <header className="topbar">
+        <a className="brand" href="#top" aria-label="Signal Room home">
+          <SignalMark />
+          <span>
+            <strong>SIGNAL ROOM</strong>
+            <small>Forecast what matters</small>
+          </span>
+        </a>
+        <nav aria-label="Primary navigation">
+          <a href="#room">Room</a>
+          <a href="#leaderboard">Leaderboard</a>
+          <a href="#how-it-works">How it works</a>
+        </nav>
+        <button type="button" className="wallet-button" disabled>
+          <span /> Wallet comes next
+        </button>
       </header>
 
-      <section className="novel-grid">
-        <aside className="cast-panel novel-panel">
-          <div className="section-label"><span>ГЕРОИ</span><span>ЭПИЗОД 01</span></div>
-          <p className="panel-intro">Три знакомства, один главный герой и слишком много советчиков.</p>
-          <div className="cast-list">
-            {CHARACTERS.map((item) => {
-              const active = item.id === character.id && !episodeComplete;
-              const style = { "--character-color": item.color } as CSSProperties;
-              return (
-                <article className={`cast-card ${active ? "active" : ""}`} key={item.id} style={style}>
-                  <span className="mini-avatar">{item.initials}</span>
-                  <div className="cast-copy">
-                    <strong>{item.name}, {item.age}</strong>
-                    <small>{item.role}</small>
-                    <div className="love-meter"><span style={{ width: `${chemistry[item.id]}%` }} /></div>
-                    <p><b>{chemistry[item.id]}%</b> химия</p>
-                  </div>
-                </article>
-              );
-            })}
+      <section className="hero" id="top">
+        <div className="hero-copy">
+          <p className="eyebrow"><span /> Live local prototype · no money at risk</p>
+          <h1>Turn opinions into a<br /><em>track record.</em></h1>
+          <p className="hero-description">
+            Make an independent probability forecast. Keep it hidden until the
+            deadline. Build a reputation from accuracy—not volume.
+          </p>
+          <div className="hero-actions">
+            <a className="primary-action" href="#room">Enter demo room <span>→</span></a>
+            <a className="text-action" href="#how-it-works">See how scoring works</a>
           </div>
-          <div className="rule-card">
-            <strong>ПРАВИЛА ЭПИЗОДА</strong>
-            <ol>
-              <li>Каждый зритель выбирает одну реплику.</li>
-              <li>Побеждает вариант с большинством голосов.</li>
-              <li>При ничьей случайно выбирается один из лидеров.</li>
-            </ol>
+        </div>
+        <div className="signal-preview" aria-label="Example forecast signal">
+          <div className="preview-topline">
+            <span>ROOM SIGNAL</span>
+            <span className="private-label">HIDDEN WHILE OPEN</span>
           </div>
-        </aside>
-
-        <section className="story-panel novel-panel">
-          {episodeComplete ? (
-            <div className="finale">
-              <p className="chapter-label">ЭПИЗОД ЗАВЕРШЁН</p>
-              <div className="finale-heart">♥</div>
-              <h1>Кажется, мэтч случился.</h1>
-              <p>Лучшая химия — с персонажем <strong>{favorite.name}</strong>: {chemistry[favorite.id]}%.</p>
-              <div className="finale-card" style={{ "--character-color": favorite.color } as CSSProperties}>
-                <span>{favorite.initials}</span><div><small>{favorite.role}</small><strong>{favorite.name}</strong></div>
-              </div>
-              <button className="primary-button" type="button" onClick={restartEpisode}>ПЕРЕИГРАТЬ ЭПИЗОД</button>
-            </div>
-          ) : (
-            <>
-              <div className={`date-scene scene-${character.id}`} style={characterStyle}>
-                <div className="scene-heading">
-                  <div><p className="chapter-label">{scene.chapter}</p><strong>{scene.place}</strong></div>
-                  <span>{scene.time}</span>
-                </div>
-                <div className="city-window" aria-hidden="true"><i /><i /><i /><i /></div>
-                <div className="character-portrait">
-                  <span className="portrait-initials">{character.initials}</span>
-                  <i className="portrait-head" /><i className="portrait-body" />
-                </div>
-                <p className="narrator-line">{scene.narration}</p>
-                <div className="dialogue-box">
-                  <span className="speaker-name">{character.name}</span>
-                  <p>«{scene.line}»</p>
-                </div>
-              </div>
-
-              {result ? (
-                <div className={`result-card ${result.winner.affection < 0 ? "bad" : "good"}`}>
-                  <div className="result-meta">
-                    <span>{result.wasTie ? `НИЧЬЯ ×${result.tiedCount} · СЛУЧАЙНЫЙ ВЫБОР` : "ВЫБОР БОЛЬШИНСТВА"}</span>
-                    <b>{result.winner.affection > 0 ? "+" : ""}{result.winner.affection}% ♥</b>
-                  </div>
-                  <h2>{result.winner.text}</h2>
-                  <p>{result.winner.response}</p>
-                  <button className="primary-button" type="button" onClick={nextScene}>{sceneIndex === SCENES.length - 1 ? "УЗНАТЬ ИТОГ ЭПИЗОДА" : "СЛЕДУЮЩЕЕ СВИДАНИЕ →"}</button>
-                </div>
-              ) : (
-                <div className="voting-block">
-                  <div className="voting-title"><div><span>РЕШАЮТ ЗРИТЕЛИ</span><h2>Что ответить?</h2></div><time>00:{String(seconds).padStart(2, "0")}</time></div>
-                  <div className="answers">
-                    {choices.map((choice, index) => {
-                      const percent = Math.round((choice.votes / totalVotes) * 100);
-                      return (
-                        <button className={`answer ${selected === choice.id ? "selected" : ""}`} disabled={selected !== null} key={choice.id} onClick={() => castVote(choice.id)} type="button">
-                          <span className="answer-key">{String.fromCharCode(65 + index)}</span>
-                          <span className="answer-text"><strong>{choice.text}</strong><small>{choice.tone}</small></span>
-                          <span className="vote-count"><b>{percent}%</b><small>{choice.votes} голосов</small></span>
-                          <i className="vote-fill" style={{ width: `${percent}%` }} />
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <button className="resolve-now" type="button" onClick={resolveRound}>ЗАВЕРШИТЬ ГОЛОСОВАНИЕ СЕЙЧАС</button>
-                  <p className="vote-note">{selected ? "Ваш голос добавлен. Теперь остаётся смотреть на последствия." : "Один зритель — один голос. Передумать нельзя, как и после странного сообщения в 2:00."}</p>
-                </div>
-              )}
-            </>
-          )}
-        </section>
-
-        <aside className="audience-panel novel-panel">
-          <div className="section-label"><span>ПРЯМОЙ ЭФИР</span><span>СЦЕНА {sceneIndex + 1}/3</span></div>
-          <div className="current-score">
-            <p>ТЕКУЩАЯ ХИМИЯ</p><strong style={{ color: character.color }}>{currentChemistry}%</strong><span>с {character.name}</span>
+          <div className="preview-orbit">
+            <div className="orbit-ring ring-one" />
+            <div className="orbit-ring ring-two" />
+            <div className="preview-number">68<small>%</small></div>
+            <span className="orbit-node node-one" />
+            <span className="orbit-node node-two" />
+            <span className="orbit-node node-three" />
           </div>
-          <div className="profile-note"><span>СЕГОДНЯ</span><p>{character.tagline}</p></div>
-          <div className="story-log" aria-live="polite">
-            {storyLog.slice(0, 5).map((entry, index) => <div className="log-line" key={`${entry}-${index}`}><span>{String(storyLog.length - index).padStart(2, "0")}</span><p>{entry}</p></div>)}
+          <div className="preview-footer">
+            <span>Your private forecast</span>
+            <strong>Signed receipt · next milestone</strong>
           </div>
-          <div className="onchain-note"><span>◇</span><div><strong>ПОЗЖЕ НА SOLANA</strong><p>Коллективный выбор и итог эпизода можно сделать публичными и проверяемыми.</p></div></div>
-        </aside>
+        </div>
       </section>
 
-      <footer className="novel-footer"><span>ПРОТОТИП · ТОЛЬКО ВЫМЫШЛЕННЫЕ ВЗРОСЛЫЕ ПЕРСОНАЖИ</span><span>ОДНО СВИДАНИЕ · МНОГО МНЕНИЙ</span></footer>
+      <section className="proof-strip" aria-label="Product principles">
+        <div><strong>Independent</strong><span>Consensus stays hidden</span></div>
+        <div><strong>Measurable</strong><span>Deterministic Brier score</span></div>
+        <div><strong>Verifiable</strong><span>Solana anchoring planned</span></div>
+        <div><strong>Non-custodial</strong><span>No bets or deposits</span></div>
+      </section>
+
+      <section className="room-section" id="room">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow"><span /> Interactive vertical slice</p>
+            <h2>{DEMO_ROOM.name}</h2>
+            <p>{DEMO_ROOM.description}</p>
+          </div>
+          <div className="room-facts">
+            <span><strong>{DEMO_ROOM.members}</strong> members</span>
+            <span><strong>{openCount}</strong> open</span>
+            <span><strong>{resolvedCount}</strong> resolved</span>
+          </div>
+        </div>
+
+        <div className="room-grid">
+          <aside className="question-sidebar">
+            <div className="sidebar-title">
+              <span>Questions</span>
+              <small>{questions.length} total</small>
+            </div>
+            <div className="question-list">
+              {questions.map((item) => (
+                <QuestionListItem
+                  key={item.id}
+                  question={item}
+                  active={item.id === question.id}
+                  onSelect={() => selectQuestion(item.id)}
+                />
+              ))}
+            </div>
+          </aside>
+
+          <article className="forecast-card">
+            <div className="question-meta">
+              <span className={`status-pill ${question.status}`}>
+                <i /> {statusCopy[question.status]}
+              </span>
+              <span>{question.category}</span>
+              <span>Closes {question.closesAt}</span>
+            </div>
+
+            <h3>{question.prompt}</h3>
+            <div className="criteria-box">
+              <span>Resolution criteria</span>
+              <p>{question.resolutionCriteria}</p>
+            </div>
+
+            {question.status === "open" ? (
+              <div className="forecast-input">
+                {ownForecast ? (
+                  <div className="locked-forecast">
+                    <span>Your forecast</span>
+                    <strong>{ownForecast.probability}%</strong>
+                    <p>Locked locally. Other forecasts remain hidden until seal.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="probability-heading">
+                      <div>
+                        <span>Your probability</span>
+                        <small>How likely is YES?</small>
+                      </div>
+                      <output htmlFor="probability">{probability}%</output>
+                    </div>
+                    <input
+                      id="probability"
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={probability}
+                      onChange={(event) => setProbability(Number(event.target.value))}
+                      style={{ "--forecast-value": `${probability}%` } as React.CSSProperties}
+                    />
+                    <div className="range-labels"><span>NO</span><span>UNCERTAIN</span><span>YES</span></div>
+                    <button type="button" className="submit-button" onClick={submitForecast}>
+                      Lock forecast at {probability}% <span>→</span>
+                    </button>
+                    <p className="input-note">Local demo only. Wallet signing is the next milestone.</p>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div className="revealed-panel">
+                <div className="aggregate-block">
+                  <span>Room aggregate</span>
+                  <strong>{aggregate ?? 0}%</strong>
+                  <small>{question.forecasts.length} revealed forecasts</small>
+                </div>
+                <div className="histogram" aria-label="Forecast distribution">
+                  {histogram.map((count, index) => (
+                    <div className="histogram-column" key={index}>
+                      <span style={{ height: `${Math.max(8, (count / maxBucket) * 100)}%` }}>
+                        <i>{count}</i>
+                      </span>
+                      <small>{index * 20}–{index === 4 ? 100 : index * 20 + 19}</small>
+                    </div>
+                  ))}
+                </div>
+                {question.status === "resolved" && question.outcome !== undefined && (
+                  <div className="resolution-card">
+                    <div>
+                      <span>Final outcome</span>
+                      <strong>{question.outcome === 1 ? "YES" : "NO"}</strong>
+                    </div>
+                    <div>
+                      <span>Evidence</span>
+                      <strong>{question.sourceLabel}</strong>
+                    </div>
+                    {ownForecast && (
+                      <div>
+                        <span>Your Brier score</span>
+                        <strong>{formatScore(brierScorePoints(ownForecast.probability, question.outcome))}</strong>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {notice && <div className="notice" role="status"><span>✓</span>{notice}</div>}
+
+            <div className="demo-controls">
+              <div>
+                <span>Organizer demo controls</span>
+                <small>These controls will be permissioned after wallet auth.</small>
+              </div>
+              {question.status === "open" && (
+                <button type="button" onClick={sealQuestion}>Seal question</button>
+              )}
+              {question.status === "sealed" && (
+                <div className="resolve-actions">
+                  <button type="button" onClick={() => resolveQuestion(0)}>Resolve NO</button>
+                  <button type="button" onClick={() => resolveQuestion(1)}>Resolve YES</button>
+                </div>
+              )}
+              {question.status === "resolved" && (
+                <span className="finalized-label">Finalized locally</span>
+              )}
+            </div>
+          </article>
+
+          <aside className="leaderboard-card" id="leaderboard">
+            <div className="sidebar-title">
+              <span>Accuracy board</span>
+              <small>Brier score</small>
+            </div>
+            <p className="leaderboard-intro">Accuracy compounds. Three resolved forecasts remove provisional status.</p>
+            <div className="leaderboard-list">
+              {leaderboard.slice(0, 5).map((entry, index) => (
+                <div className={`leader-row ${entry.participantId === "you" ? "you" : ""}`} key={entry.participantId}>
+                  <span className="rank">{String(index + 1).padStart(2, "0")}</span>
+                  <span className="leader-avatar">{entry.participantName.slice(0, 2).toUpperCase()}</span>
+                  <div>
+                    <strong>{entry.participantName}</strong>
+                    <small>{entry.resolvedForecasts} resolved · {entry.directionAccuracy}% direction</small>
+                  </div>
+                  <span className="leader-score">{formatScore(entry.averageScore)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="score-explainer">
+              <span>Score guide</span>
+              <p><strong>100</strong> perfect · <strong>75</strong> neutral 50% · <strong>0</strong> confidently wrong</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section className="how-section" id="how-it-works">
+        <div className="section-heading compact">
+          <div>
+            <p className="eyebrow"><span /> The loop</p>
+            <h2>Simple enough to explain in 30 seconds.</h2>
+          </div>
+        </div>
+        <div className="steps-grid">
+          <article><span>01</span><h3>Forecast privately</h3><p>Choose a probability. The consensus stays hidden, so your signal remains independent.</p></article>
+          <article><span>02</span><h3>Seal the room</h3><p>At the deadline, submissions stop and the distribution becomes visible to everyone.</p></article>
+          <article><span>03</span><h3>Resolve with evidence</h3><p>An objective outcome and source close the question. The result cannot be reopened.</p></article>
+          <article><span>04</span><h3>Earn a track record</h3><p>Brier scoring rewards calibrated confidence and exposes confidently wrong calls.</p></article>
+        </div>
+      </section>
+
+      <footer>
+        <a className="brand" href="#top"><SignalMark /><span><strong>SIGNAL ROOM</strong><small>Accuracy over volume</small></span></a>
+        <p>Local vertical slice · Solana devnet anchoring comes next</p>
+        <a href="https://github.com/hereismycodername/signal_room" target="_blank" rel="noreferrer">GitHub ↗</a>
+      </footer>
     </main>
   );
 }
