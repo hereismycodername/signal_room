@@ -76,15 +76,37 @@ button { cursor: pointer; }
   padding: 10px 14px;
   border: 1px solid #ccd0c9;
   border-radius: 99px;
-  color: #777e79;
+  color: var(--forest);
   background: transparent;
   font-size: 9px;
   font-weight: 800;
   letter-spacing: .06em;
   text-transform: uppercase;
-  cursor: not-allowed;
+  cursor: pointer;
 }
-.wallet-button span { width: 7px; height: 7px; border-radius: 50%; background: #b6bbb7; }
+.wallet-button:hover, .wallet-button.connected { border-color: var(--forest); background: var(--mint); }
+.wallet-button:disabled { color: #777e79; cursor: wait; opacity: .7; }
+.wallet-button span { width: 7px; height: 7px; border-radius: 50%; background: var(--acid-dark); }
+.wallet-button.connected span { background: #36a166; box-shadow: 0 0 0 4px rgba(54,161,102,.12); }
+.wallet-menu { position: relative; justify-self: end; }
+.wallet-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 80;
+  display: grid;
+  gap: 8px;
+  width: min(300px, calc(100vw - 32px));
+  padding: 15px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 16px 45px rgba(22,60,51,.16);
+}
+.wallet-popover strong { font: 400 17px/1.15 var(--serif); }
+.wallet-popover small { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; }
+.wallet-popover p { margin: 2px 0; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.wallet-popover button { padding: 10px 12px; border: 1px solid var(--forest); text-align: left; background: white; font-size: 9px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.wallet-popover button:hover { color: white; background: var(--forest); }
 
 .hero {
   position: relative;
@@ -207,8 +229,10 @@ input[type="range"]::-webkit-slider-thumb { width: 22px; height: 22px; border: 5
 input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border: 5px solid var(--surface); border-radius: 50%; background: var(--acid); box-shadow: 0 0 0 2px var(--forest); }
 .range-labels { display: flex; justify-content: space-between; color: #8b918d; font-size: 7px; font-weight: 900; letter-spacing: .08em; }
 .submit-button { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: 26px; padding: 15px 17px; border: 0; color: white; background: var(--forest); font-size: 10px; font-weight: 900; letter-spacing: .07em; text-transform: uppercase; }
+.submit-button:disabled { cursor: wait; opacity: .68; }
 .submit-button span { color: var(--acid); font-size: 16px; }
 .input-note { margin: 10px 0 0; color: #929792; font-size: 8px; text-align: center; }
+.wallet-error { margin: 8px 0 0; color: #9a3f30; font-size: 8px; text-align: center; }
 .locked-forecast { display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 22px; border: 1px solid #cbd7cd; background: var(--mint); }
 .locked-forecast strong { color: var(--forest); font: 400 54px/.9 var(--serif); }
 .locked-forecast p { grid-column: 1 / -1; margin: 14px 0 0; color: #53665d; font-size: 10px; }
@@ -306,8 +330,7 @@ footer .brand small { color: #91aaa1; }
 
 @media (max-width: 560px) {
   .topbar { min-height: 66px; }
-  .wallet-button { padding: 9px; font-size: 0; }
-  .wallet-button::after { content: "NEXT"; font-size: 8px; }
+  .wallet-button { padding: 9px; font-size: 8px; }
   .hero { min-height: auto; padding-block: 62px; }
   .hero h1 { font-size: 51px; }
   .hero-actions { align-items: flex-start; flex-direction: column; }

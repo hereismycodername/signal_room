@@ -10,7 +10,7 @@ Signal Room helps a group answer a more useful question than “what does the ma
 
 ## Status
 
-Signal Room is an active hackathon MVP. The product specification and system design are complete; the repository currently contains an early interaction prototype that is being replaced by the forecasting flow.
+Signal Room is an active hackathon MVP. The forecasting vertical slice, Solana Wallet Standard sign-in, server-side signature verification, and signed forecast receipts are implemented.
 
 - [Product and implementation plan](docs/SIGNAL_ROOM_PLAN.md)
 - Live demo: coming soon
@@ -27,7 +27,7 @@ Group decisions are usually driven by confidence, popularity, or a simple vote. 
 
 Signal Room gives every participant a simple probability forecast from 0% to 100%. Forecasts stay hidden until the deadline, are signed by the participant, and are committed before the result is known. After resolution, the application calculates a deterministic Brier score and updates a public accuracy leaderboard.
 
-The MVP anchors commitment and result roots on Solana devnet. This makes the history independently verifiable without forcing users to pay for a transaction for every forecast.
+The current MVP verifies offchain wallet signatures and persists the resulting commitment receipts. The next milestone anchors commitment and result roots on Solana devnet, without forcing users to pay for a transaction for every forecast.
 
 ## MVP flow
 
@@ -81,7 +81,7 @@ The browser never receives another participant's forecast before sealing. The se
 | --- | --- |
 | Frontend and API | Next.js 16 · React 19 · TypeScript |
 | Styling | Tailwind CSS 4 |
-| Wallet integration | Wallet Standard · `@solana/kit` |
+| Wallet integration | Wallet Standard · `@solana/kit` 8 plugins |
 | Onchain program | Rust · Anchor |
 | Data | PostgreSQL |
 | Local Solana environment | Surfpool |
@@ -94,8 +94,11 @@ The browser never receives another participant's forecast before sealing. The se
 .
 ├── docs/
 │   └── SIGNAL_ROOM_PLAN.md   # product, architecture, security, and delivery plan
+├── drizzle/                  # PostgreSQL migration
 ├── public/                   # static assets
-├── src/app/                  # Next.js application
+├── src/app/                  # Next.js UI and route handlers
+├── src/db/                   # Drizzle schema
+├── src/server/               # auth, signatures, sessions, persistence
 ├── .github/workflows/        # continuous integration
 └── package.json
 ```
@@ -113,25 +116,30 @@ npm ci
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000). `DATABASE_URL` is optional for a quick demo: without it, the app uses an in-memory store that resets when the server restarts. Use PostgreSQL for persistent multi-user testing.
+
+To enable persistent storage, copy `.env.example` to `.env.local`, set `DATABASE_URL`, then run `npm run db:migrate` before starting the app.
 
 Run the current quality checks:
 
 ```bash
 npm run lint
+npm test
 npm run build
 ```
 
-Solana and database setup instructions will be added with those components. No wallet secret or private key should ever be committed to this repository.
+Wallet sign-in and forecast submission only request readable message signatures. They do not create a transaction or spend SOL. No wallet secret or private key should ever be committed to this repository.
 
 ## Roadmap
 
 - [x] Product definition and MVP boundary
 - [x] Hybrid onchain/offchain architecture
 - [x] Initial interaction prototype
-- [ ] Forecasting-room vertical slice
-- [ ] Wallet authentication and signed commitments
-- [ ] PostgreSQL persistence and deterministic scoring
+- [x] Forecasting-room vertical slice
+- [x] Wallet authentication and signed commitments
+- [x] PostgreSQL schema, migration, and optional local fallback
+- [ ] Organizer studio and role enforcement
+- [ ] Persistent room lifecycle and aggregate reveal API
 - [ ] Anchor program and local validator tests
 - [ ] Solana devnet anchoring and explorer links
 - [ ] Public user test and demo data
@@ -153,6 +161,7 @@ The project is under active hackathon development. Before opening a pull request
 
 ```bash
 npm run lint
+npm test
 npm run build
 ```
 

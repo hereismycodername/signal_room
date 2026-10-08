@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSignalWallet } from "@/app/providers";
+import { WalletButton } from "@/components/wallet-button";
 import { CURRENT_PARTICIPANT, DEMO_ROOM } from "@/lib/demo-room";
 import {
   aggregateProbability,
@@ -63,6 +65,7 @@ function QuestionListItem({
 }
 
 export default function Home() {
+  const { address, session, busy, error: walletError, submitSignedForecast } = useSignalWallet();
   const [questions, setQuestions] = useState(DEMO_ROOM.questions);
   const [selectedQuestionId, setSelectedQuestionId] = useState(
     DEMO_ROOM.questions[0].id,
@@ -72,7 +75,9 @@ export default function Home() {
 
   const question = questions.find((item) => item.id === selectedQuestionId)!;
   const ownForecast = question.forecasts.find(
-    (forecast) => forecast.participantId === CURRENT_PARTICIPANT.id,
+    (forecast) =>
+      forecast.participantId === CURRENT_PARTICIPANT.id ||
+      (address !== null && forecast.participantId === address),
   );
   const aggregate = aggregateProbability(question.forecasts);
   const histogram = buildHistogram(question.forecasts);
@@ -83,37 +88,94 @@ export default function Home() {
   ).length;
   const openCount = questions.filter((item) => item.status === "open").length;
 
+  useEffect(() => {
+    if (!address || question.status !== "open") return;
+    let active = true;
+
+    fetch(`/api/rooms/${DEMO_ROOM.id}/questions/${question.id}/forecasts`, {
+      cache: "no-store",
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((value: { forecast?: { probabilityBps: number; submittedAt: string } } | null) => {
+        if (!active || !value?.forecast) return;
+        const storedForecast = value.forecast;
+        setQuestions((items) =>
+          items.map((item) => {
+            if (
+              item.id !== question.id ||
+              item.forecasts.some((forecast) => forecast.participantId === address)
+            ) {
+              return item;
+            }
+            return {
+              ...item,
+              forecasts: [
+                ...item.forecasts,
+                {
+                  id: `${item.id}-${address}`,
+                  participantId: address,
+                  participantName: `${address.slice(0, 4)}…${address.slice(-4)}`,
+                  probability: storedForecast.probabilityBps / 100,
+                  submittedAt: storedForecast.submittedAt,
+                },
+              ],
+            };
+          }),
+        );
+      })
+      .catch(() => undefined);
+
+    return () => {
+      active = false;
+    };
+  }, [address, question.id, question.status]);
+
   function selectQuestion(id: string) {
     setSelectedQuestionId(id);
     setProbability(68);
     setNotice(null);
   }
 
-  function submitForecast() {
+  async function submitForecast() {
     if (question.status !== "open" || ownForecast) return;
 
-    setQuestions((items) =>
-      items.map((item) =>
-        item.id === question.id
-          ? {
-              ...item,
-              forecasts: [
-                ...item.forecasts,
-                {
-                  id: `${item.id}-${CURRENT_PARTICIPANT.id}`,
-                  participantId: CURRENT_PARTICIPANT.id,
-                  participantName: CURRENT_PARTICIPANT.name,
-                  probability,
-                  submittedAt: new Date().toISOString(),
-                },
-              ],
-            }
-          : item,
-      ),
-    );
-    setNotice(
-      `Forecast locked at ${probability}%. The room consensus stays hidden until sealing.`,
-    );
+    if (!address) {
+      setNotice("Connect and verify a Solana wallet first. Signing is free and creates no transaction.");
+      return;
+    }
+
+    try {
+      const saved = await submitSignedForecast({
+        roomId: DEMO_ROOM.id,
+        questionId: question.id,
+        probability,
+      });
+
+      setQuestions((items) =>
+        items.map((item) =>
+          item.id === question.id
+            ? {
+                ...item,
+                forecasts: [
+                  ...item.forecasts,
+                  {
+                    id: `${item.id}-${address}`,
+                    participantId: address,
+                    participantName: `${address.slice(0, 4)}…${address.slice(-4)}`,
+                    probability: saved.probability,
+                    submittedAt: saved.submittedAt,
+                  },
+                ],
+              }
+            : item,
+        ),
+      );
+      setNotice(
+        `Signed forecast locked at ${saved.probability}%. Receipt ${saved.commitmentHash.slice(0, 10)}… saved in ${saved.storage === "postgres" ? "Postgres" : "the local demo store"}.`,
+      );
+    } catch (cause) {
+      setNotice(cause instanceof Error ? cause.message : "Could not save the forecast.");
+    }
   }
 
   function sealQuestion() {
@@ -160,9 +222,7 @@ export default function Home() {
           <a href="#leaderboard">Leaderboard</a>
           <a href="#how-it-works">How it works</a>
         </nav>
-        <button type="button" className="wallet-button" disabled>
-          <span /> Wallet comes next
-        </button>
+        <WalletButton />
       </header>
 
       <section className="hero" id="top">
@@ -193,7 +253,7 @@ export default function Home() {
           </div>
           <div className="preview-footer">
             <span>Your private forecast</span>
-            <strong>Signed receipt · next milestone</strong>
+            <strong>Signed receipt · live now</strong>
           </div>
         </div>
       </section>
@@ -201,7 +261,7 @@ export default function Home() {
       <section className="proof-strip" aria-label="Product principles">
         <div><strong>Independent</strong><span>Consensus stays hidden</span></div>
         <div><strong>Measurable</strong><span>Deterministic Brier score</span></div>
-        <div><strong>Verifiable</strong><span>Solana anchoring planned</span></div>
+        <div><strong>Verifiable</strong><span>Wallet-signed receipts</span></div>
         <div><strong>Non-custodial</strong><span>No bets or deposits</span></div>
       </section>
 
@@ -280,10 +340,19 @@ export default function Home() {
                       style={{ "--forecast-value": `${probability}%` } as React.CSSProperties}
                     />
                     <div className="range-labels"><span>NO</span><span>UNCERTAIN</span><span>YES</span></div>
-                    <button type="button" className="submit-button" onClick={submitForecast}>
-                      Lock forecast at {probability}% <span>→</span>
+                    <button type="button" className="submit-button" onClick={() => void submitForecast()} disabled={busy}>
+                      {busy
+                        ? "Waiting for wallet…"
+                        : address
+                          ? `Sign & lock at ${probability}%`
+                          : "Connect wallet to lock"} <span>→</span>
                     </button>
-                    <p className="input-note">Local demo only. Wallet signing is the next milestone.</p>
+                    <p className="input-note">
+                      {session
+                        ? `Verified on devnet identity · ${session.storage === "postgres" ? "persistent database" : "in-memory demo storage"}`
+                        : "Message signature only. No transaction and no SOL fee."}
+                    </p>
+                    {walletError && <p className="wallet-error">{walletError}</p>}
                   </>
                 )}
               </div>
@@ -330,7 +399,7 @@ export default function Home() {
             <div className="demo-controls">
               <div>
                 <span>Organizer demo controls</span>
-                <small>These controls will be permissioned after wallet auth.</small>
+                <small>Local state controls for the demo; organizer roles come in the next slice.</small>
               </div>
               {question.status === "open" && (
                 <button type="button" onClick={sealQuestion}>Seal question</button>
@@ -391,7 +460,7 @@ export default function Home() {
 
       <footer>
         <a className="brand" href="#top"><SignalMark /><span><strong>SIGNAL ROOM</strong><small>Accuracy over volume</small></span></a>
-        <p>Local vertical slice · Solana devnet anchoring comes next</p>
+        <p>Wallet-signed forecasts · Solana devnet identity · no funds at risk</p>
         <a href="https://github.com/hereismycodername/signal_room" target="_blank" rel="noreferrer">GitHub ↗</a>
       </footer>
     </main>
