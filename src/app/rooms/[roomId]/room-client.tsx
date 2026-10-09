@@ -6,6 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useSignalWallet } from "@/app/providers";
 import { WalletButton } from "@/components/wallet-button";
 import type { BinaryOutcome, QuestionStatus } from "@/lib/forecasting";
+import { verifyCommitmentProofInBrowser } from "@/lib/merkle-browser";
+import type { MerkleProofStep } from "@/lib/merkle";
 import { brierScoreBps, type RoomLeaderboardEntry } from "@/lib/room-results";
 import styles from "./room.module.css";
 
@@ -17,6 +19,8 @@ type PublicQuestion = {
   closesAt: string;
   status: QuestionStatus;
   forecastCount: number;
+  commitmentsRoot: string | null;
+  commitmentCount: number | null;
   aggregateProbabilityBps: number | null;
   histogram: number[] | null;
   outcome: BinaryOutcome | null;
@@ -71,6 +75,7 @@ export function PublicRoomClient() {
   const [submitting, setSubmitting] = useState(false);
   const [loadingError, setLoadingError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [proofStatus, setProofStatus] = useState<Record<string, "checking" | "verified" | "failed">>({});
   const [clockMs, setClockMs] = useState(0);
 
   const refreshRoom = useCallback(async () => {
@@ -123,6 +128,9 @@ export function PublicRoomClient() {
   const questionId = question?.id;
   const receiptKey = address && question ? `${address}:${question.id}` : null;
   const ownReceipt = receiptKey ? receipts[receiptKey] : null;
+  const proofKey = receiptKey && question?.commitmentsRoot
+    ? `${receiptKey}:${question.commitmentsRoot}`
+    : null;
   const deadlinePassed = question
     ? new Date(question.closesAt).getTime() <= clockMs
     : false;
@@ -184,6 +192,36 @@ export function PublicRoomClient() {
       setNotice("Room link copied. Invite participants to forecast independently.");
     } catch {
       setNotice("Copy the room URL from the address bar to share it.");
+    }
+  }
+
+  async function verifyOwnProof() {
+    if (!question || !ownReceipt || !proofKey || !question.commitmentsRoot) return;
+    setProofStatus((current) => ({ ...current, [proofKey]: "checking" }));
+    try {
+      const response = await fetch(
+        `/api/rooms/${encodeURIComponent(roomId)}/questions/${encodeURIComponent(question.id)}/proof`,
+        { cache: "no-store" },
+      );
+      const result = (await response.json()) as {
+        error?: string;
+        commitmentHash?: string;
+        root?: string;
+        count?: number;
+        proof?: MerkleProofStep[];
+        algorithm?: string;
+      };
+      if (!response.ok) throw new Error(result.error ?? "Could not load your proof.");
+      const verified = result.commitmentHash === ownReceipt.commitmentHash &&
+        result.root === question.commitmentsRoot &&
+        result.count === question.commitmentCount &&
+        result.algorithm === "sha256-prefix-v1" &&
+        Array.isArray(result.proof) &&
+        await verifyCommitmentProofInBrowser(result.commitmentHash, result.root!, result.proof);
+      setProofStatus((current) => ({ ...current, [proofKey]: verified ? "verified" : "failed" }));
+    } catch (cause) {
+      setProofStatus((current) => ({ ...current, [proofKey]: "failed" }));
+      setNotice(cause instanceof Error ? cause.message : "Could not check your proof.");
     }
   }
 
@@ -352,6 +390,22 @@ export function PublicRoomClient() {
                             <small>{index * 20}–{index === 4 ? 100 : index * 20 + 19}</small>
                           </div>
                         ))}
+                      </div>
+                      <div className={styles.proofPanel}>
+                        <span>Sealed commitment snapshot · not onchain yet</span>
+                        {question.commitmentsRoot ? (
+                          <>
+                            <code>{question.commitmentsRoot}</code>
+                            <small>{question.commitmentCount} signed commitments in this Merkle root.</small>
+                            {ownReceipt && (
+                              <button type="button" onClick={() => void verifyOwnProof()} disabled={proofKey ? proofStatus[proofKey] === "checking" : true}>
+                                {proofKey && proofStatus[proofKey] === "checking" ? "Checking…" : "Verify my forecast inclusion"}
+                              </button>
+                            )}
+                            {proofKey && proofStatus[proofKey] === "verified" && <strong role="status">Proof verified in this browser ✓</strong>}
+                            {proofKey && proofStatus[proofKey] === "failed" && <strong role="alert">Proof check failed. Do not trust this snapshot.</strong>}
+                          </>
+                        ) : <small>This older question has no sealed snapshot.</small>}
                       </div>
                       {question.status === "resolved" && question.outcome !== null && (
                         <div className={styles.outcome}>

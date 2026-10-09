@@ -12,6 +12,7 @@ import {
   users,
 } from "@/db/schema";
 import type { QuestionStatus } from "@/lib/forecasting";
+import { buildCommitmentTree } from "@/lib/merkle";
 
 export type AuthNonceRecord = {
   id: string;
@@ -62,6 +63,8 @@ export type StoredQuestion = {
   evidenceUrl: string | null;
   openedAt: Date | null;
   sealedAt: Date | null;
+  commitmentsRoot: string | null;
+  commitmentCount: number | null;
   resolvedAt: Date | null;
   createdAt: Date;
 };
@@ -239,17 +242,31 @@ export async function createForecast(record: StoredForecast) {
   const db = getDb();
 
   if (!db) {
-    if (memory.forecasts.has(key)) return false;
+    if (memory.forecasts.has(key)) return "duplicate" as const;
+    const question = memory.questions.get(record.questionId);
+    if (question && (question.status !== "open" || question.closesAt <= new Date())) {
+      return "closed" as const;
+    }
     memory.forecasts.set(key, record);
-    return true;
+    return "created" as const;
   }
 
-  const created = await db
-    .insert(forecasts)
-    .values(record)
-    .onConflictDoNothing()
-    .returning({ id: forecasts.id });
-  return created.length === 1;
+  return db.transaction(async (tx) => {
+    const [question] = await tx
+      .select({ status: questions.status, closesAt: questions.closesAt })
+      .from(questions)
+      .where(eq(questions.id, record.questionId))
+      .for("update");
+    if (question && (question.status !== "open" || question.closesAt <= new Date())) {
+      return "closed" as const;
+    }
+    const created = await tx
+      .insert(forecasts)
+      .values(record)
+      .onConflictDoNothing()
+      .returning({ id: forecasts.id });
+    return created.length === 1 ? "created" as const : "duplicate" as const;
+  });
 }
 
 export async function getForecast(
@@ -400,6 +417,8 @@ export async function transitionQuestion(
       | "evidenceUrl"
       | "openedAt"
       | "sealedAt"
+      | "commitmentsRoot"
+      | "commitmentCount"
       | "resolvedAt"
     >
   >,
@@ -408,17 +427,46 @@ export async function transitionQuestion(
   if (!db) {
     const question = memory.questions.get(id);
     if (!question || question.status !== expectedStatus) return null;
-    const updated = { ...question, ...values };
+    const snapshot = values.status === "sealed"
+      ? buildCommitmentTree(
+          Array.from(memory.forecasts.values())
+            .filter((forecast) => forecast.questionId === id)
+            .map((forecast) => forecast.commitmentHash),
+        )
+      : null;
+    const updated = {
+      ...question,
+      ...values,
+      ...(snapshot ? { commitmentsRoot: snapshot.root, commitmentCount: snapshot.count } : {}),
+    };
     memory.questions.set(id, updated);
     return updated;
   }
 
-  const [updated] = await db
-    .update(questions)
-    .set(values)
-    .where(and(eq(questions.id, id), eq(questions.status, expectedStatus)))
-    .returning();
-  return updated
-    ? { ...updated, status: updated.status as QuestionStatus }
-    : null;
+  return db.transaction(async (tx) => {
+    const [current] = await tx
+      .select({ status: questions.status })
+      .from(questions)
+      .where(eq(questions.id, id))
+      .for("update");
+    if (!current || current.status !== expectedStatus) return null;
+    const snapshot = values.status === "sealed"
+      ? buildCommitmentTree(
+          (await tx
+            .select({ commitmentHash: forecasts.commitmentHash })
+            .from(forecasts)
+            .where(eq(forecasts.questionId, id)))
+            .map((forecast) => forecast.commitmentHash),
+        )
+      : null;
+    const [updated] = await tx
+      .update(questions)
+      .set({
+        ...values,
+        ...(snapshot ? { commitmentsRoot: snapshot.root, commitmentCount: snapshot.count } : {}),
+      })
+      .where(eq(questions.id, id))
+      .returning();
+    return updated ? { ...updated, status: updated.status as QuestionStatus } : null;
+  });
 }

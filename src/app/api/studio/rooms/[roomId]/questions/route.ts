@@ -46,6 +46,8 @@ export async function POST(request: Request, context: RouteContext) {
     evidenceUrl: null,
     openedAt: null,
     sealedAt: null,
+    commitmentsRoot: null,
+    commitmentCount: null,
     resolvedAt: null,
     createdAt: now,
   });

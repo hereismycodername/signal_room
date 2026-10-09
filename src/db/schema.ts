@@ -56,6 +56,8 @@ export const questions = pgTable("questions", {
   evidenceUrl: text("evidence_url"),
   openedAt: timestamp("opened_at", { withTimezone: true }),
   sealedAt: timestamp("sealed_at", { withTimezone: true }),
+  commitmentsRoot: text("commitments_root"),
+  commitmentCount: integer("commitment_count"),
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

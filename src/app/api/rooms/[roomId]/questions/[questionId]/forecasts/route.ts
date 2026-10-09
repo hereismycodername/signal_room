@@ -80,7 +80,7 @@ export async function POST(request: Request, context: RouteContext) {
 
   const commitmentHash = await sha256Hex(message);
   const submittedAt = new Date();
-  const created = await createForecast({
+  const creation = await createForecast({
     id: crypto.randomUUID(),
     roomId,
     questionId,
@@ -91,7 +91,10 @@ export async function POST(request: Request, context: RouteContext) {
     signature: parsed.data.signature,
     submittedAt,
   });
-  if (!created) {
+  if (creation === "closed") {
+    return Response.json({ error: "This question is no longer accepting forecasts." }, { status: 409 });
+  }
+  if (creation === "duplicate") {
     return Response.json(
       { error: "This wallet already submitted a forecast for the question." },
       { status: 409 },

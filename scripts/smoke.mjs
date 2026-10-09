@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { generateKeyPairSigner, signBytes } from "@solana/kit";
 
 const baseUrl = process.env.SMOKE_BASE_URL ?? "http://127.0.0.1:3100";
@@ -66,6 +66,18 @@ Salt: ${salt}
 Chain ID: solana:devnet
 
 Signing records this forecast. It does not submit a transaction or spend SOL.`;
+}
+
+function verifiesProof(commitmentHash, root, proof) {
+  const hash = (bytes) => createHash("sha256").update(bytes).digest();
+  let current = hash(Buffer.concat([Buffer.from([0]), Buffer.from(commitmentHash, "hex")]));
+  for (const step of proof) {
+    const sibling = Buffer.from(step.sibling, "hex");
+    current = hash(step.position === "left"
+      ? Buffer.concat([Buffer.from([1]), sibling, current])
+      : Buffer.concat([Buffer.from([1]), current, sibling]));
+  }
+  return current.toString("hex") === root;
 }
 
 async function submitForecast(signer, cookie, roomId, questionId, probabilityBps) {
@@ -142,9 +154,13 @@ const openRoom = expectStatus(await request(publicPath), 200);
 assert.equal(openRoom.room.questions[0].forecastCount, 2);
 assert.equal(openRoom.room.questions[0].aggregateProbabilityBps, null);
 assert.equal(openRoom.room.questions[0].histogram, null);
+assert.equal(openRoom.room.questions[0].commitmentsRoot, null);
 assert.deepEqual(openRoom.leaderboard, []);
 assert.equal(JSON.stringify(openRoom).includes(organizer.address), false);
 assert.equal(JSON.stringify(openRoom).includes(participant.address), false);
+
+const proofPath = `/api/rooms/${roomId}/questions/${questionId}/proof`;
+expectStatus(await request(proofPath, { cookie: participantCookie }), 409);
 
 expectStatus(
   await request(transitionPath, {
@@ -156,6 +172,15 @@ expectStatus(
 );
 const sealedRoom = expectStatus(await request(publicPath), 200);
 assert.equal(sealedRoom.room.questions[0].aggregateProbabilityBps, 5_000);
+assert.equal(sealedRoom.room.questions[0].commitmentCount, 2);
+assert.match(sealedRoom.room.questions[0].commitmentsRoot, /^[0-9a-f]{64}$/);
+
+const participantProof = expectStatus(await request(proofPath, { cookie: participantCookie }), 200);
+assert.equal(participantProof.root, sealedRoom.room.questions[0].commitmentsRoot);
+assert.equal(participantProof.anchored, false);
+assert.equal(verifiesProof(participantProof.commitmentHash, participantProof.root, participantProof.proof), true);
+expectStatus(await request(proofPath), 401);
+expectStatus(await submitForecast(participant, participantCookie, roomId, questionId, 5_000), 409);
 
 expectStatus(
   await request(transitionPath, {
@@ -187,4 +212,4 @@ const receipt = expectStatus(
 assert.equal(receipt.forecast.probabilityBps, 2_000);
 assert.equal(receipt.forecast.commitmentHash.length, 64);
 
-console.log(`Smoke passed: two signed wallets, privacy, roles, resolution, ranking. Room: /rooms/${roomId}`);
+console.log(`Smoke passed: two signed wallets, privacy, roles, sealed Merkle proof, resolution, ranking. Room: /rooms/${roomId}`);

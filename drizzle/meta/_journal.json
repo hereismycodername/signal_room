@@ -15,6 +15,13 @@
       "when": 1791473768086,
       "tag": "0001_nebulous_sleeper",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791562398950,
+      "tag": "0002_quiet_yellowjacket",
+      "breakpoints": true
     }
   ]
 }

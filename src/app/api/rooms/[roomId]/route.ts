@@ -35,6 +35,12 @@ export async function GET(_request: Request, context: RouteContext) {
       closesAt: question.closesAt,
       status: question.status,
       ...summary,
+      commitmentsRoot: question.status === "sealed" || question.status === "resolved"
+        ? question.commitmentsRoot
+        : null,
+      commitmentCount: question.status === "sealed" || question.status === "resolved"
+        ? question.commitmentCount
+        : null,
       outcome: question.status === "resolved" ? question.outcome : null,
       evidenceLabel: question.status === "resolved" ? question.evidenceLabel : null,
       evidenceUrl: question.status === "resolved" ? question.evidenceUrl : null,
