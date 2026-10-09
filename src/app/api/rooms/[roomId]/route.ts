@@ -1,8 +1,9 @@
 import { revealForecastSummary } from "@/lib/public-room";
+import { buildRoomLeaderboard } from "@/lib/room-results";
 import {
   getRoom,
-  listForecastsForQuestion,
   listQuestionsByRoom,
+  listRoomForecastsWithWallet,
 } from "@/server/store";
 
 type RouteContext = { params: Promise<{ roomId: string }> };
@@ -14,24 +15,39 @@ export async function GET(_request: Request, context: RouteContext) {
 
   const allQuestions = await listQuestionsByRoom(room.id);
   const visibleQuestions = allQuestions.filter((question) => question.status !== "draft");
-  const publicQuestions = await Promise.all(
-    visibleQuestions.map(async (question) => {
-      const forecasts = await listForecastsForQuestion(question.id);
-      const summary = revealForecastSummary(question.status, forecasts);
-      return {
-        id: question.id,
-        prompt: question.prompt,
-        category: question.category,
-        resolutionCriteria: question.resolutionCriteria,
-        closesAt: question.closesAt,
-        status: question.status,
-        ...summary,
-        outcome: question.status === "resolved" ? question.outcome : null,
-        evidenceLabel:
-          question.status === "resolved" ? question.evidenceLabel : null,
-        evidenceUrl: question.status === "resolved" ? question.evidenceUrl : null,
-      };
-    }),
+  const forecasts = await listRoomForecastsWithWallet(room.id);
+  const forecastsByQuestion = new Map<string, typeof forecasts>();
+  for (const forecast of forecasts) {
+    const rows = forecastsByQuestion.get(forecast.questionId) ?? [];
+    rows.push(forecast);
+    forecastsByQuestion.set(forecast.questionId, rows);
+  }
+  const publicQuestions = visibleQuestions.map((question) => {
+    const summary = revealForecastSummary(
+      question.status,
+      forecastsByQuestion.get(question.id) ?? [],
+    );
+    return {
+      id: question.id,
+      prompt: question.prompt,
+      category: question.category,
+      resolutionCriteria: question.resolutionCriteria,
+      closesAt: question.closesAt,
+      status: question.status,
+      ...summary,
+      outcome: question.status === "resolved" ? question.outcome : null,
+      evidenceLabel: question.status === "resolved" ? question.evidenceLabel : null,
+      evidenceUrl: question.status === "resolved" ? question.evidenceUrl : null,
+    };
+  });
+  const leaderboard = buildRoomLeaderboard(
+    visibleQuestions.map((question) => ({
+      id: question.id,
+      status: question.status,
+      outcome: question.outcome,
+      resolvedAt: question.resolvedAt,
+      forecasts: forecastsByQuestion.get(question.id) ?? [],
+    })),
   );
 
   return Response.json({
@@ -42,5 +58,6 @@ export async function GET(_request: Request, context: RouteContext) {
       createdAt: room.createdAt,
       questions: publicQuestions,
     },
-  });
+    leaderboard,
+  }, { headers: { "Cache-Control": "no-store" } });
 }

@@ -39,7 +39,7 @@ export async function GET(_request: Request, context: RouteContext) {
           submittedAt: forecast.submittedAt,
         }
       : null,
-  });
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function POST(request: Request, context: RouteContext) {

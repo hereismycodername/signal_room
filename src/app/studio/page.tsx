@@ -268,7 +268,7 @@ export default function StudioPage() {
               <>
                 <div className={styles.roomHeading}>
                   <div><span>Selected room</span><h2>{selectedRoom.name}</h2><p>{selectedRoom.description}</p></div>
-                  <a href={`/api/rooms/${selectedRoom.id}`} target="_blank">Public API ↗</a>
+                  <Link href={`/rooms/${selectedRoom.id}`}>Open public room ↗</Link>
                 </div>
 
                 <form className={styles.questionForm} onSubmit={createQuestion}>

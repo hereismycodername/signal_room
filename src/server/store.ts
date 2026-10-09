@@ -285,6 +285,37 @@ export async function listForecastsForQuestion(questionId: string) {
   return db.select().from(forecasts).where(eq(forecasts.questionId, questionId));
 }
 
+export async function listRoomForecastsWithWallet(roomId: string) {
+  const db = getDb();
+  if (!db) {
+    const addressesByUserId = new Map(
+      Array.from(memory.users.values(), (user) => [user.id, user.walletAddress]),
+    );
+    return Array.from(memory.forecasts.values())
+      .filter((forecast) => forecast.roomId === roomId)
+      .flatMap((forecast) => {
+        const walletAddress = addressesByUserId.get(forecast.userId);
+        return walletAddress
+          ? [{
+              questionId: forecast.questionId,
+              walletAddress,
+              probabilityBps: forecast.probabilityBps,
+            }]
+          : [];
+      });
+  }
+
+  return db
+    .select({
+      questionId: forecasts.questionId,
+      walletAddress: users.walletAddress,
+      probabilityBps: forecasts.probabilityBps,
+    })
+    .from(forecasts)
+    .innerJoin(users, eq(forecasts.userId, users.id))
+    .where(eq(forecasts.roomId, roomId));
+}
+
 export async function createRoom(record: StoredRoom) {
   const db = getDb();
   if (!db) {
