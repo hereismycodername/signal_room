@@ -1,0 +1,19 @@
+[package]
+name = "signal_room"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+description = "Signal Room question lifecycle and Merkle-root anchors"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "signal_room"
+
+[features]
+default = []
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = "=1.1.2"

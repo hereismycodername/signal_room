@@ -1,7 +1,7 @@
 # Signal Room
 
 [![CI](https://github.com/hereismycodername/signal_room/actions/workflows/ci.yml/badge.svg)](https://github.com/hereismycodername/signal_room/actions/workflows/ci.yml)
-[![Solana](https://img.shields.io/badge/Solana-devnet-9945FF)](https://solana.com)
+[![Solana](https://img.shields.io/badge/Solana-local%20simulation-9945FF)](https://solana.com)
 [![Colosseum](https://img.shields.io/badge/Colosseum-Crypto%20World's%20Fair-14F195)](https://colosseum.com/hackathon)
 
 > A forecasting room where communities make private probability estimates and build a verifiable track record of accuracy.
@@ -10,10 +10,11 @@ Signal Room helps a group answer a more useful question than “what does the ma
 
 ## Status
 
-Signal Room is an active hackathon MVP. The forecasting vertical slice, Solana Wallet Standard sign-in, signed forecast receipts, wallet-permissioned Organizer Studio, public room pages, accuracy rankings, and offchain Merkle commitment proofs are implemented.
+Signal Room is an active hackathon MVP. The forecasting vertical slice, Solana Wallet Standard sign-in, signed forecast receipts, wallet-permissioned Organizer Studio, public room pages, accuracy rankings, and offchain Merkle commitment and result proofs are implemented. An Anchor program and generated Kit client build locally; devnet deployment and app-to-chain writes are still pending.
 
 - [Product and implementation plan](docs/SIGNAL_ROOM_PLAN.md)
 - [Commitment proof v1 specification](docs/MERKLE_PROOF_V1.md)
+- [Result proof v1 specification](docs/RESULT_PROOF_V1.md)
 - Live demo: coming soon
 - Demo video: coming soon
 - Colosseum project page: coming soon
@@ -28,7 +29,7 @@ Group decisions are usually driven by confidence, popularity, or a simple vote. 
 
 Signal Room gives every participant a simple probability forecast from 0% to 100%. Forecasts are signed by the participant and stay hidden from other users until the organizer seals the question. After resolution, the application calculates a deterministic Brier score and updates a public accuracy leaderboard.
 
-The current MVP verifies offchain wallet signatures, persists commitment receipts, freezes a Merkle root when each question is sealed, and lets a participant verify their own inclusion proof in the browser. The next milestone anchors roots on Solana devnet, without forcing users to pay for a transaction for every forecast.
+The current MVP verifies offchain wallet signatures, persists commitment receipts, freezes a Merkle root when each question is sealed, and lets a participant verify their forecast and score proofs in the browser. The next milestone anchors roots on Solana devnet, without forcing users to pay for a transaction for every forecast.
 
 ## MVP flow
 
@@ -38,9 +39,9 @@ The current MVP verifies offchain wallet signatures, persists commitment receipt
 4. Forecasts remain hidden from other participants until the question is sealed.
 5. The organizer resolves the question and links the evidence source.
 6. Signal Room reveals the distribution, calculates Brier scores, and updates the room leaderboard.
-7. A participant can check their commitment against the sealed Merkle root in their browser.
+7. A participant can check their commitment and score against the published Merkle roots in their browser.
 
-The browser verifies the proof independently, but the root is still supplied by the app server. Solana devnet anchoring is planned; until then, this is not an independently timestamped onchain record.
+The browser verifies the proofs independently, but the roots are still supplied by the app server. Solana devnet anchoring is planned; until then, this is not an independently timestamped onchain record.
 
 ## Why Solana
 
@@ -76,7 +77,7 @@ Signal Room does not use a token, wagering, user deposits, or a prediction-marke
 └──────────────────────┘
 ```
 
-The browser never receives another participant's forecast before sealing. The current server stores signed forecast records, enforces the room lifecycle, computes public summaries and rankings, and saves a commitment root at sealing. An Anchor-owned canonical lifecycle and onchain anchoring are planned.
+The browser never receives another participant's forecast before sealing. The current server stores signed forecast records, enforces the room lifecycle, computes public summaries and rankings, saves a commitment root at sealing, and saves a score root and evidence hash at resolution. The Anchor program is built locally but not deployed or connected to these API actions yet.
 
 ## Planned stack
 
@@ -103,11 +104,13 @@ The browser never receives another participant's forecast before sealing. The cu
 │   └── studio/               # organizer room and question lifecycle
 ├── src/db/                   # Drizzle schema
 ├── src/server/               # auth, signatures, sessions, persistence
+├── src/generated/            # Codama-generated Kit client
+├── programs/signal_room/     # Anchor program
 ├── .github/workflows/        # continuous integration
 └── package.json
 ```
 
-The database schema and migration are present. The Anchor workspace and generated client will be added at their implementation milestones.
+The database schema and migrations, Anchor workspace, and generated client are present.
 
 ## Quick start
 
@@ -134,6 +137,15 @@ npm test
 npm run build
 ```
 
+The Anchor workspace uses Rust, Anchor 1.1.2, and Solana CLI 3.1.10. To rebuild its IDL and generated Kit client, then simulate its complete lifecycle without signing or sending a transaction:
+
+```bash
+NO_DNA=1 anchor build
+npm run codegen:solana
+npm run simulate:anchor
+cargo test -p signal_room --lib
+```
+
 For a full local API smoke test, start the app with no `DATABASE_URL` and run `SMOKE_BASE_URL=http://127.0.0.1:3000 npm run smoke` in another terminal. It creates a temporary room with two ephemeral test wallets; it will refuse to run against PostgreSQL.
 
 Wallet sign-in and forecast submission only request readable message signatures. They do not create a transaction or spend SOL. No wallet secret or private key should ever be committed to this repository.
@@ -149,15 +161,16 @@ Wallet sign-in and forecast submission only request readable message signatures.
 - [x] Organizer studio and role enforcement
 - [x] Persistent room lifecycle and privacy-preserving aggregate API
 - [x] Public pages for newly created rooms and resolved-question rankings
-- [x] Offchain Merkle commitment snapshot and participant inclusion proof
-- [ ] Anchor program and local validator tests
+- [x] Offchain Merkle commitment and result snapshots with participant inclusion proofs
+- [x] Anchor program, Rust unit tests, local SBF build, generated client, and unsigned LiteSVM lifecycle simulation
+- [ ] Signed local validator transaction tests
 - [ ] Solana devnet anchoring and explorer links
 - [ ] Public user test and demo data
 - [ ] Deployment, demo video, and Colosseum submission
 
 ## Verification model
 
-For each forecast, the application derives a SHA-256 commitment from the room, question, wallet, probability, and a random salt. The participant signs that commitment. At sealing, the server sorts commitment hashes and stores a domain-separated SHA-256 Merkle root and count. The participant can fetch their own sibling path and verify it locally against the published root. The current app reveals aggregate statistics after sealing and scores participants after resolution. Anchoring the root on Solana is the next integrity milestone.
+For each forecast, the application derives a SHA-256 commitment from the room, question, wallet, probability, and a random salt. The participant signs that commitment. At sealing, the server stores a domain-separated Merkle root and count. At resolution, it stores a second root over outcomes and scores, plus an evidence hash. Participants can verify their own sibling paths in the browser. Anchoring these roots on Solana is the next integrity milestone.
 
 Hidden pre-seal forecasts reduce public herding. The Merkle proof detects an omitted or changed forecast relative to the root the server publishes, but until onchain anchoring is implemented, the server is still trusted for that root and historical integrity. It can see submitted values, so the current design is not operator-blind privacy or zero knowledge.
 

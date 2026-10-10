@@ -1,0 +1,9 @@
+{
+  "idl": "target/idl/signal_room.json",
+  "scripts": {
+    "js": {
+      "from": "@codama/renderers-js",
+      "args": [".", { "syncPackageJson": false }]
+    }
+  }
+}

@@ -48,6 +48,8 @@ export async function POST(request: Request, context: RouteContext) {
     sealedAt: null,
     commitmentsRoot: null,
     commitmentCount: null,
+    resultsRoot: null,
+    evidenceHash: null,
     resolvedAt: null,
     createdAt: now,
   });

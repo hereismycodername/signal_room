@@ -1,20 +1,11 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import { useSignalWallet } from "@/app/providers";
+import { useHydrated } from "@/lib/use-hydrated";
 
 function shortAddress(address: string) {
   return `${address.slice(0, 4)}…${address.slice(-4)}`;
-}
-
-const subscribeToHydration = () => () => undefined;
-
-function useHydrated() {
-  return useSyncExternalStore(
-    subscribeToHydration,
-    () => true,
-    () => false,
-  );
 }
 
 export function WalletButton() {

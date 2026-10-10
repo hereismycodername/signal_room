@@ -54,6 +54,9 @@ export async function POST(request: Request, context: RouteContext) {
   if (parsed.data.action === "open" && question.closesAt <= new Date()) {
     return Response.json({ error: "Update the deadline before opening this question." }, { status: 409 });
   }
+  if (parsed.data.action === "seal" && question.closesAt > new Date()) {
+    return Response.json({ error: "Wait until the forecast deadline before sealing." }, { status: 409 });
+  }
 
   const now = new Date();
   const values =

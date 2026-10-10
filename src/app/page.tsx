@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSignalWallet } from "@/app/providers";
 import { WalletButton } from "@/components/wallet-button";
 import { CURRENT_PARTICIPANT, DEMO_ROOM } from "@/lib/demo-room";
+import { useHydrated } from "@/lib/use-hydrated";
 import {
   aggregateProbability,
   brierScorePoints,
@@ -66,7 +67,9 @@ function QuestionListItem({
 }
 
 export default function Home() {
+  const hydrated = useHydrated();
   const { address, session, busy, error: walletError, submitSignedForecast } = useSignalWallet();
+  const walletLoading = !hydrated || busy;
   const [questions, setQuestions] = useState(DEMO_ROOM.questions);
   const [selectedQuestionId, setSelectedQuestionId] = useState(
     DEMO_ROOM.questions[0].id,
@@ -186,7 +189,7 @@ export default function Home() {
         item.id === question.id ? { ...item, status: "sealed" as const } : item,
       ),
     );
-    setNotice("Question sealed. Forecasts are now visible and cannot be changed.");
+    setNotice("Sample question sealed in this browser. Use Studio for a real organizer-controlled question.");
   }
 
   function resolveQuestion(outcome: BinaryOutcome) {
@@ -204,7 +207,7 @@ export default function Home() {
       ),
     );
     setNotice(
-      `Resolved ${outcome === 1 ? "YES" : "NO"}. Scores and leaderboard were recalculated.`,
+      `Sample question resolved ${outcome === 1 ? "YES" : "NO"} in this browser. Scores and leaderboard were recalculated.`,
     );
   }
 
@@ -229,7 +232,7 @@ export default function Home() {
 
       <section className="hero" id="top">
         <div className="hero-copy">
-          <p className="eyebrow"><span /> Live local prototype · no money at risk</p>
+          <p className="eyebrow"><span /> Interactive product demo · no money at risk</p>
           <h1>Turn opinions into a<br /><em>track record.</em></h1>
           <p className="hero-description">
             Make an independent probability forecast. Keep it hidden until the
@@ -255,7 +258,7 @@ export default function Home() {
           </div>
           <div className="preview-footer">
             <span>Your private forecast</span>
-            <strong>Signed receipt · live now</strong>
+            <strong>Example signed receipt</strong>
           </div>
         </div>
       </section>
@@ -305,7 +308,7 @@ export default function Home() {
                 <i /> {statusCopy[question.status]}
               </span>
               <span>{question.category}</span>
-              <span>Closes {question.closesAt}</span>
+              <span>Sample deadline {question.closesAt}</span>
             </div>
 
             <h3>{question.prompt}</h3>
@@ -320,7 +323,7 @@ export default function Home() {
                   <div className="locked-forecast">
                     <span>Your forecast</span>
                     <strong>{ownForecast.probability}%</strong>
-                    <p>Locked locally. Other forecasts remain hidden until seal.</p>
+                    <p>Your signed forecast was recorded. The sample seal controls affect this browser only.</p>
                   </div>
                 ) : (
                   <>
@@ -342,8 +345,8 @@ export default function Home() {
                       style={{ "--forecast-value": `${probability}%` } as React.CSSProperties}
                     />
                     <div className="range-labels"><span>NO</span><span>UNCERTAIN</span><span>YES</span></div>
-                    <button type="button" className="submit-button" onClick={() => void submitForecast()} disabled={busy}>
-                      {busy
+                    <button type="button" className="submit-button" onClick={() => void submitForecast()} disabled={walletLoading}>
+                      {walletLoading
                         ? "Waiting for wallet…"
                         : address
                           ? `Sign & lock at ${probability}%`
@@ -401,7 +404,7 @@ export default function Home() {
             <div className="demo-controls">
               <div>
                 <span>Organizer demo controls</span>
-                <small>Local state controls for the demo; organizer roles come in the next slice.</small>
+                <small>These controls change sample data only in this browser. Real organizer permissions are in Studio.</small>
               </div>
               {question.status === "open" && (
                 <button type="button" onClick={sealQuestion}>Seal question</button>

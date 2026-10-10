@@ -13,6 +13,7 @@ import {
 } from "@/db/schema";
 import type { QuestionStatus } from "@/lib/forecasting";
 import { buildCommitmentTree } from "@/lib/merkle";
+import { buildResultTree, evidenceHash } from "@/lib/result-roots";
 
 export type AuthNonceRecord = {
   id: string;
@@ -65,6 +66,8 @@ export type StoredQuestion = {
   sealedAt: Date | null;
   commitmentsRoot: string | null;
   commitmentCount: number | null;
+  resultsRoot: string | null;
+  evidenceHash: string | null;
   resolvedAt: Date | null;
   createdAt: Date;
 };
@@ -419,6 +422,8 @@ export async function transitionQuestion(
       | "sealedAt"
       | "commitmentsRoot"
       | "commitmentCount"
+      | "resultsRoot"
+      | "evidenceHash"
       | "resolvedAt"
     >
   >,
@@ -434,10 +439,22 @@ export async function transitionQuestion(
             .map((forecast) => forecast.commitmentHash),
         )
       : null;
+    const result = values.status === "resolved" && (values.outcome === 0 || values.outcome === 1)
+      && values.evidenceLabel && values.evidenceUrl
+      ? {
+          resultsRoot: buildResultTree(
+            Array.from(memory.forecasts.values())
+              .filter((forecast) => forecast.questionId === id),
+            values.outcome,
+          ).root,
+          evidenceHash: evidenceHash(values.evidenceLabel, values.evidenceUrl),
+        }
+      : null;
     const updated = {
       ...question,
       ...values,
       ...(snapshot ? { commitmentsRoot: snapshot.root, commitmentCount: snapshot.count } : {}),
+      ...(result ?? {}),
     };
     memory.questions.set(id, updated);
     return updated;
@@ -459,11 +476,25 @@ export async function transitionQuestion(
             .map((forecast) => forecast.commitmentHash),
         )
       : null;
+    const result = values.status === "resolved" && (values.outcome === 0 || values.outcome === 1)
+      && values.evidenceLabel && values.evidenceUrl
+      ? {
+          resultsRoot: buildResultTree(
+            await tx
+              .select({ commitmentHash: forecasts.commitmentHash, probabilityBps: forecasts.probabilityBps })
+              .from(forecasts)
+              .where(eq(forecasts.questionId, id)),
+            values.outcome,
+          ).root,
+          evidenceHash: evidenceHash(values.evidenceLabel, values.evidenceUrl),
+        }
+      : null;
     const [updated] = await tx
       .update(questions)
       .set({
         ...values,
         ...(snapshot ? { commitmentsRoot: snapshot.root, commitmentCount: snapshot.count } : {}),
+        ...(result ?? {}),
       })
       .where(eq(questions.id, id))
       .returning();

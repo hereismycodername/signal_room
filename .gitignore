@@ -19,6 +19,8 @@
 
 # production
 /build
+/target/
+/.anchor/
 
 # misc
 .DS_Store

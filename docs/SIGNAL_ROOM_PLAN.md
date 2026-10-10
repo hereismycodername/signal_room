@@ -269,6 +269,7 @@ Seeds:
 - commitments_root;
 - outcome;
 - results_root;
+- evidence_hash;
 - sealed_at;
 - resolved_at;
 - bump.
@@ -278,7 +279,7 @@ Seeds:
 - `create_room(room_id, metadata_hash)`;
 - `create_question(question_index, metadata_hash, closes_at)`;
 - `seal_question(commitments_root, commitment_count)`;
-- `resolve_question(outcome, results_root)`.
+- `resolve_question(outcome, results_root, evidence_hash)`.
 
 На MVP программа не хранит пользовательские средства и не распределяет награды. Это сознательно уменьшает площадь атаки.
 

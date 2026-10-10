@@ -44,6 +44,8 @@ export async function GET(_request: Request, context: RouteContext) {
       outcome: question.status === "resolved" ? question.outcome : null,
       evidenceLabel: question.status === "resolved" ? question.evidenceLabel : null,
       evidenceUrl: question.status === "resolved" ? question.evidenceUrl : null,
+      resultsRoot: question.status === "resolved" ? question.resultsRoot : null,
+      evidenceHash: question.status === "resolved" ? question.evidenceHash : null,
     };
   });
   const leaderboard = buildRoomLeaderboard(

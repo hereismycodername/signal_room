@@ -1,4 +1,6 @@
 import { buildCommitmentTree } from "@/lib/merkle";
+import { buildResultTree, resultHash } from "@/lib/result-roots";
+import { brierScoreBps } from "@/lib/room-results";
 import { readSession } from "@/server/session";
 import { getForecast, getRoomQuestion, listForecastsForQuestion } from "@/server/store";
 
@@ -29,6 +31,35 @@ export async function GET(_request: Request, context: RouteContext) {
   const proof = tree.proofFor(ownForecast.commitmentHash);
   if (!proof) return Response.json({ error: "Forecast is absent from the sealed snapshot." }, { status: 500 });
 
+  let result: null | {
+    hash: string;
+    root: string;
+    count: number;
+    proof: typeof proof;
+    outcome: 0 | 1;
+    score: number;
+  } = null;
+  if (question.status === "resolved") {
+    if ((question.outcome !== 0 && question.outcome !== 1) || !question.resultsRoot) {
+      return Response.json({ error: "Resolved result snapshot is incomplete." }, { status: 500 });
+    }
+    const resultTree = buildResultTree(forecasts, question.outcome);
+    if (resultTree.root !== question.resultsRoot || resultTree.count !== question.commitmentCount) {
+      return Response.json({ error: "Stored scores differ from the resolved snapshot." }, { status: 500 });
+    }
+    const hash = resultHash(ownForecast, question.outcome);
+    const resultProof = resultTree.proofFor(hash);
+    if (!resultProof) return Response.json({ error: "Your score is absent from the resolved snapshot." }, { status: 500 });
+    result = {
+      hash,
+      root: resultTree.root,
+      count: resultTree.count,
+      proof: resultProof,
+      outcome: question.outcome,
+      score: brierScoreBps(ownForecast.probabilityBps, question.outcome),
+    };
+  }
+
   return Response.json({
     commitmentHash: ownForecast.commitmentHash,
     root: tree.root,
@@ -36,5 +67,6 @@ export async function GET(_request: Request, context: RouteContext) {
     proof,
     algorithm: "sha256-prefix-v1",
     anchored: false,
+    result,
   }, { headers: { "Cache-Control": "private, no-store" } });
 }

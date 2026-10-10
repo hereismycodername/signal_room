@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSignalWallet } from "@/app/providers";
 import { WalletButton } from "@/components/wallet-button";
 import type { BinaryOutcome, QuestionStatus } from "@/lib/forecasting";
-import { verifyCommitmentProofInBrowser } from "@/lib/merkle-browser";
+import { evidenceHashInBrowser, resultHashInBrowser, verifyCommitmentProofInBrowser } from "@/lib/merkle-browser";
 import type { MerkleProofStep } from "@/lib/merkle";
 import { brierScoreBps, type RoomLeaderboardEntry } from "@/lib/room-results";
 import styles from "./room.module.css";
@@ -21,6 +21,8 @@ type PublicQuestion = {
   forecastCount: number;
   commitmentsRoot: string | null;
   commitmentCount: number | null;
+  resultsRoot: string | null;
+  evidenceHash: string | null;
   aggregateProbabilityBps: number | null;
   histogram: number[] | null;
   outcome: BinaryOutcome | null;
@@ -129,7 +131,7 @@ export function PublicRoomClient() {
   const receiptKey = address && question ? `${address}:${question.id}` : null;
   const ownReceipt = receiptKey ? receipts[receiptKey] : null;
   const proofKey = receiptKey && question?.commitmentsRoot
-    ? `${receiptKey}:${question.commitmentsRoot}`
+    ? `${receiptKey}:${question.commitmentsRoot}:${question.resultsRoot ?? ""}`
     : null;
   const deadlinePassed = question
     ? new Date(question.closesAt).getTime() <= clockMs
@@ -210,14 +212,39 @@ export function PublicRoomClient() {
         count?: number;
         proof?: MerkleProofStep[];
         algorithm?: string;
+        result?: {
+          hash: string;
+          root: string;
+          count: number;
+          proof: MerkleProofStep[];
+          outcome: BinaryOutcome;
+          score: number;
+        } | null;
       };
       if (!response.ok) throw new Error(result.error ?? "Could not load your proof.");
-      const verified = result.commitmentHash === ownReceipt.commitmentHash &&
+      let verified = result.commitmentHash === ownReceipt.commitmentHash &&
         result.root === question.commitmentsRoot &&
         result.count === question.commitmentCount &&
         result.algorithm === "sha256-prefix-v1" &&
         Array.isArray(result.proof) &&
         await verifyCommitmentProofInBrowser(result.commitmentHash, result.root!, result.proof);
+      if (verified && question.status === "resolved") {
+        const scoreResult = result.result;
+        verified = !!scoreResult && question.outcome !== null && !!question.resultsRoot &&
+          !!question.evidenceHash && !!question.evidenceLabel && !!question.evidenceUrl &&
+          scoreResult.root === question.resultsRoot &&
+          scoreResult.count === question.commitmentCount &&
+          scoreResult.outcome === question.outcome &&
+          scoreResult.score === brierScoreBps(ownReceipt.probabilityBps, question.outcome) &&
+          scoreResult.hash === await resultHashInBrowser(
+            ownReceipt.commitmentHash,
+            ownReceipt.probabilityBps,
+            question.outcome,
+          ) &&
+          Array.isArray(scoreResult.proof) &&
+          await verifyCommitmentProofInBrowser(scoreResult.hash, scoreResult.root, scoreResult.proof) &&
+          question.evidenceHash === await evidenceHashInBrowser(question.evidenceLabel, question.evidenceUrl);
+      }
       setProofStatus((current) => ({ ...current, [proofKey]: verified ? "verified" : "failed" }));
     } catch (cause) {
       setProofStatus((current) => ({ ...current, [proofKey]: "failed" }));
@@ -399,7 +426,7 @@ export function PublicRoomClient() {
                             <small>{question.commitmentCount} signed commitments in this Merkle root.</small>
                             {ownReceipt && (
                               <button type="button" onClick={() => void verifyOwnProof()} disabled={proofKey ? proofStatus[proofKey] === "checking" : true}>
-                                {proofKey && proofStatus[proofKey] === "checking" ? "Checking…" : "Verify my forecast inclusion"}
+                                {proofKey && proofStatus[proofKey] === "checking" ? "Checking…" : question.status === "resolved" ? "Verify forecast and score" : "Verify my forecast inclusion"}
                               </button>
                             )}
                             {proofKey && proofStatus[proofKey] === "verified" && <strong role="status">Proof verified in this browser ✓</strong>}
@@ -420,6 +447,9 @@ export function PublicRoomClient() {
                           </div>
                           {ownReceipt && (
                             <div><span>Your Brier score</span><strong>{scoreLabel(brierScoreBps(ownReceipt.probabilityBps, question.outcome))}</strong></div>
+                          )}
+                          {question.resultsRoot && (
+                            <div><span>Score snapshot · not onchain yet</span><code>{question.resultsRoot}</code></div>
                           )}
                         </div>
                       )}

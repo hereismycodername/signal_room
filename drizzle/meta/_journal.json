@@ -22,6 +22,13 @@
       "when": 1791562398950,
       "tag": "0002_quiet_yellowjacket",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791621625627,
+      "tag": "0003_acoustic_stardust",
+      "breakpoints": true
     }
   ]
 }

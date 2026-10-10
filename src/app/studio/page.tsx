@@ -53,6 +53,12 @@ export default function StudioPage() {
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [clockMs, setClockMs] = useState(0);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setClockMs(Date.now()), 1_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   const selectedRoom = useMemo(
     () => rooms.find((room) => room.id === selectedRoomId) ?? rooms[0] ?? null,
@@ -296,7 +302,9 @@ export default function StudioPage() {
                           <button disabled={loading} onClick={() => void transitionQuestion(question.id, { action: "open" })}>Open forecasts</button>
                         )}
                         {question.status === "open" && (
-                          <button disabled={loading} onClick={() => void transitionQuestion(question.id, { action: "seal" })}>Seal now</button>
+                          <button disabled={loading || clockMs < new Date(question.closesAt).getTime()} onClick={() => void transitionQuestion(question.id, { action: "seal" })}>
+                            {clockMs < new Date(question.closesAt).getTime() ? "Seal after deadline" : "Seal now"}
+                          </button>
                         )}
                         {question.status === "sealed" && (
                           <form onSubmit={(event) => void resolveQuestion(event, question.id)}>

@@ -44,3 +44,27 @@ export async function verifyCommitmentProofInBrowser(
     return false;
   }
 }
+
+export async function resultHashInBrowser(
+  commitmentHash: string,
+  probabilityBps: number,
+  outcome: 0 | 1,
+) {
+  if (!Number.isInteger(probabilityBps) || probabilityBps < 0 || probabilityBps > 10_000) {
+    throw new Error("Invalid probability.");
+  }
+  const score = Math.round(10_000 - ((probabilityBps - outcome * 10_000) ** 2) / 10_000);
+  const scoreBytes = Uint8Array.of(score & 255, score >> 8);
+  const bytes = await digest(concat(Uint8Array.of(3), fromHex(commitmentHash), Uint8Array.of(outcome), scoreBytes));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+export async function evidenceHashInBrowser(label: string, url: string) {
+  const bytes = await digest(concat(
+    Uint8Array.of(4),
+    new TextEncoder().encode(label),
+    Uint8Array.of(0),
+    new TextEncoder().encode(url),
+  ));
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}

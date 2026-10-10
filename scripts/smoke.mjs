@@ -122,7 +122,7 @@ const questionResponse = await request(`/api/studio/rooms/${roomId}/questions`, 
     category: "Testing",
     resolutionCriteria:
       "YES if both test wallets appear in the final public leaderboard.",
-    closesAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+    closesAt: new Date(Date.now() + 8_000).toISOString(),
   },
 });
 const questionId = expectStatus(questionResponse, 201).question.id;
@@ -168,6 +168,16 @@ expectStatus(
     cookie: organizerCookie,
     body: { action: "seal" },
   }),
+  409,
+);
+await new Promise((resolve) => setTimeout(resolve, Math.max(0, new Date(questionResponse.body.question.closesAt).getTime() - Date.now() + 150)));
+
+expectStatus(
+  await request(transitionPath, {
+    method: "POST",
+    cookie: organizerCookie,
+    body: { action: "seal" },
+  }),
   200,
 );
 const sealedRoom = expectStatus(await request(publicPath), 200);
@@ -196,6 +206,8 @@ expectStatus(
   200,
 );
 const resolvedRoom = expectStatus(await request(publicPath), 200);
+assert.match(resolvedRoom.room.questions[0].resultsRoot, /^[0-9a-f]{64}$/);
+assert.match(resolvedRoom.room.questions[0].evidenceHash, /^[0-9a-f]{64}$/);
 assert.deepEqual(
   resolvedRoom.leaderboard.map((entry) => entry.walletAddress),
   [organizer.address, participant.address],
@@ -212,4 +224,9 @@ const receipt = expectStatus(
 assert.equal(receipt.forecast.probabilityBps, 2_000);
 assert.equal(receipt.forecast.commitmentHash.length, 64);
 
-console.log(`Smoke passed: two signed wallets, privacy, roles, sealed Merkle proof, resolution, ranking. Room: /rooms/${roomId}`);
+const resolvedProof = expectStatus(await request(proofPath, { cookie: participantCookie }), 200);
+assert.equal(resolvedProof.result.root, resolvedRoom.room.questions[0].resultsRoot);
+assert.equal(resolvedProof.result.score, 3_600);
+assert.equal(verifiesProof(resolvedProof.result.hash, resolvedProof.result.root, resolvedProof.result.proof), true);
+
+console.log(`Smoke passed: two signed wallets, privacy, roles, deadline, commitment and score proofs, resolution, ranking. Room: /rooms/${roomId}`);
